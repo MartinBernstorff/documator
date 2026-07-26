@@ -433,3 +433,39 @@ def test_an_unmatched_markdown_reference_is_still_an_error(tmp_path: Path) -> No
     assert (tmp_path / "out" / "index.md").read_text() == snapshot("""\
 [documator: no note matches transclusion "Missing.md"]
 """)
+
+
+def test_a_dotted_note_name_still_transcludes(tmp_path: Path) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              index.md | ![[Release 1.0 notes]]\\n
+              Release 1.0 notes.md | shipped\\n
+            out
+        """),
+    )
+
+    assert _render(tmp_path / "in", tmp_path / "out") == 0
+
+    assert (tmp_path / "out" / "index.md").read_text() == snapshot("""\
+shipped
+
+""")
+
+
+def test_an_embed_of_a_file_the_vault_lacks_is_an_error(tmp_path: Path) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              index.md | ![[Release 1.0 notes]]\\n
+            out
+        """),
+    )
+
+    assert _render(tmp_path / "in", tmp_path / "out") == 2
+
+    assert (tmp_path / "out" / "index.md").read_text() == snapshot("""\
+[documator: no note matches transclusion "Release 1.0 notes"]
+""")

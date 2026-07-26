@@ -6,7 +6,7 @@ from typing import NewType
 from iterpy import Arr
 
 from documator.execution import Command
-from documator.transclusion import EMBED, Reference
+from documator.transclusion import Reference
 
 Markdown = NewType("Markdown", str)
 Line = NewType("Line", str)
@@ -108,18 +108,24 @@ def _to_blocks(segment: _Segment) -> list[Block]:
 
 # Only prose is split: inside a fence an embed is code being quoted, not a transclusion.
 def _split_embeds(prose: Markdown) -> list[Block]:
-    blocks: list[Block] = []
-    cursor = 0
-    for embed in EMBED.finditer(prose):
-        if prose[cursor : embed.start()]:
-            blocks.append(PassthroughBlock(Markdown(prose[cursor : embed.start()])))
-        blocks.append(TransclusionBlock(Reference(embed["reference"])))
-        cursor = embed.end()
-    if not blocks:
-        return [PassthroughBlock(prose)]
-    if prose[cursor:]:
-        blocks.append(PassthroughBlock(Markdown(prose[cursor:])))
-    return blocks
+    # The single capture group makes split alternate literal text with each reference.
+    return (
+        Arr(re.split(r"!\[\[([^\[\]\n]*)\]\]", prose))
+        .enumerate()
+        .filter(lambda part: _is_embed(part) or bool(part[1]))
+        .map(_prose_or_embed)
+        .to_list()
+    )
+
+
+def _is_embed(part: tuple[int, str]) -> bool:
+    return part[0] % 2 == 1
+
+
+def _prose_or_embed(part: tuple[int, str]) -> Block:
+    if _is_embed(part):
+        return TransclusionBlock(Reference(part[1]))
+    return PassthroughBlock(Markdown(part[1]))
 
 
 def _opening_delimiter(line: Line) -> Delimiter | None:

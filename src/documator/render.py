@@ -19,7 +19,6 @@ from documator.parsing import (
     parse,
 )
 from documator.transclusion import (
-    Cycle,
     NonNoteEmbed,
     NotePath,
     Reference,
@@ -86,8 +85,7 @@ def _prune(output_dir: OutputDir, produced: set[RelativePath]) -> None:
             path.rmdir()
 
 
-# The exit code travels with the note, because an unresolvable transclusion stops the
-# engine (2) while a command the author wrote badly only fails the content (1).
+# An unresolvable transclusion stops the engine (2); a bad command only fails content.
 @dataclass(frozen=True, slots=True)
 class _Failure:
     note: Annotation
@@ -110,7 +108,7 @@ class _Origin:
         return self.chain[-1]
 
     def working_dir(self) -> WorkingDir:
-        return WorkingDir((self.vault.root / self.note()).parent)
+        return self.vault.beside(self.note())
 
     def entered(self, note: NotePath) -> _Origin:
         return _Origin(self.vault, (*self.chain, note))
@@ -143,21 +141,17 @@ def _render_block(block: Block, origin: _Origin, timeout: TimeoutSeconds) -> _Re
 def _render_transclusion(
     reference: Reference, origin: _Origin, timeout: TimeoutSeconds
 ) -> _Rendered:
-    resolution = resolve(origin.vault, reference)
-    match resolution:
-        case NonNoteEmbed(embedded):
-            return _Rendered(Markdown(f"![[{embedded}]]"), [])
-        case Path() as note if note not in origin.chain:
-            log.info("transcluding %s into %s", note, origin.note())
-            return _render_markdown(
-                Markdown((origin.vault.root / note).read_text(encoding="utf-8")),
-                origin.entered(note),
-                timeout,
-            )
-        case Path() as note:
-            return _operational(Cycle((*origin.chain, note)), origin)
-        case failure:
-            return _operational(failure, origin)
+    resolution = resolve(origin.vault, reference, origin.chain)
+    if isinstance(resolution, NonNoteEmbed):
+        return _Rendered(Markdown(str(resolution)), [])
+    if isinstance(resolution, Path):
+        log.info("transcluding %s into %s", resolution, origin.note())
+        return _render_markdown(
+            Markdown(origin.vault.read(resolution)),
+            origin.entered(resolution),
+            timeout,
+        )
+    return _operational(resolution, origin)
 
 
 def _operational(failure: TransclusionFailure, origin: _Origin) -> _Rendered:
