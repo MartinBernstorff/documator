@@ -3,29 +3,34 @@ from pathlib import Path
 
 import pytest
 
-from documator.domain import InputDir, OutputDir
-from documator.render import DEFAULT_TIMEOUT, render
+from documator.domain import InputDir, OutputDir, TimeoutSeconds
+from documator.render import render
+from documator.tree_layout import TreeLayout, build_tree
+
+VAULT = TreeLayout("""
+    in
+      note.md | # Note\\n
+      sub
+        nested.md | nested\\n
+        data.csv | a,b\\n1,2\\n
+    out
+""")
 
 
 def _render(input_dir: Path, output_dir: Path) -> int:
-    output_dir.mkdir(parents=True, exist_ok=True)
-    return render(InputDir(input_dir), OutputDir(output_dir), DEFAULT_TIMEOUT)
+    return render(InputDir(input_dir), OutputDir(output_dir), TimeoutSeconds(10.0))
 
 
 @pytest.fixture
 def vault(tmp_path: Path) -> Path:
-    input_dir = tmp_path / "in"
-    (input_dir / "sub").mkdir(parents=True)
-    (input_dir / "note.md").write_text("# Note\n")
-    (input_dir / "sub" / "nested.md").write_text("nested\n")
-    (input_dir / "sub" / "data.csv").write_text("a,b\n1,2\n")
-    return input_dir
+    build_tree(tmp_path, VAULT)
+    return tmp_path
 
 
-def test_mirrors_input_tree_verbatim(vault: Path, tmp_path: Path) -> None:
-    output_dir = tmp_path / "out"
+def test_mirrors_input_tree_verbatim(vault: Path) -> None:
+    output_dir = vault / "out"
 
-    assert _render(vault, output_dir) == 0
+    assert _render(vault / "in", output_dir) == 0
 
     assert (output_dir / "note.md").read_text() == "# Note\n"
     assert (output_dir / "sub" / "nested.md").read_text() == "nested\n"
@@ -33,24 +38,28 @@ def test_mirrors_input_tree_verbatim(vault: Path, tmp_path: Path) -> None:
 
 
 def test_copies_binary_files_verbatim(tmp_path: Path) -> None:
-    input_dir = tmp_path / "in"
-    input_dir.mkdir()
+    build_tree(tmp_path, TreeLayout("in\nout"))
     payload = bytes(range(256))
-    (input_dir / "image.png").write_bytes(payload)
+    (tmp_path / "in" / "image.png").write_bytes(payload)
+
+    assert _render(tmp_path / "in", tmp_path / "out") == 0
+    assert (tmp_path / "out" / "image.png").read_bytes() == payload
+
+
+def test_prunes_output_paths_not_produced_by_this_run(tmp_path: Path) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              note.md | # Note\\n
+            out
+              gone
+                stale.md | stale\\n
+        """),
+    )
     output_dir = tmp_path / "out"
 
-    assert _render(input_dir, output_dir) == 0
-    assert (output_dir / "image.png").read_bytes() == payload
-
-
-def test_prunes_output_paths_not_produced_by_this_run(
-    vault: Path, tmp_path: Path
-) -> None:
-    output_dir = tmp_path / "out"
-    (output_dir / "gone").mkdir(parents=True)
-    (output_dir / "gone" / "stale.md").write_text("stale\n")
-
-    assert _render(vault, output_dir) == 0
+    assert _render(tmp_path / "in", output_dir) == 0
 
     assert not (output_dir / "gone").exists()
     assert (output_dir / "note.md").exists()
@@ -59,48 +68,61 @@ def test_prunes_output_paths_not_produced_by_this_run(
 def test_stale_file_does_not_block_a_path_that_became_a_directory(
     tmp_path: Path,
 ) -> None:
-    input_dir = tmp_path / "in"
-    (input_dir / "note.md").mkdir(parents=True)
-    (input_dir / "note.md" / "inner.md").write_text("inner\n")
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              note.md
+                inner.md | inner\\n
+            out
+              note.md | stale\\n
+        """),
+    )
     output_dir = tmp_path / "out"
-    output_dir.mkdir()
-    (output_dir / "note.md").write_text("stale\n")
 
-    assert _render(input_dir, output_dir) == 0
+    assert _render(tmp_path / "in", output_dir) == 0
     assert (output_dir / "note.md" / "inner.md").read_text() == "inner\n"
 
 
 def test_stale_directory_does_not_block_a_path_that_became_a_file(
     tmp_path: Path,
 ) -> None:
-    input_dir = tmp_path / "in"
-    input_dir.mkdir()
-    (input_dir / "note.md").write_text("note\n")
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              note.md | note\\n
+            out
+              note.md
+                stale.md | stale\\n
+        """),
+    )
     output_dir = tmp_path / "out"
-    (output_dir / "note.md").mkdir(parents=True)
-    (output_dir / "note.md" / "stale.md").write_text("stale\n")
 
-    assert _render(input_dir, output_dir) == 0
+    assert _render(tmp_path / "in", output_dir) == 0
     assert (output_dir / "note.md").read_text() == "note\n"
 
 
 def test_copies_file_mode(tmp_path: Path) -> None:
-    input_dir = tmp_path / "in"
-    input_dir.mkdir()
-    script = input_dir / "run.sh"
-    script.write_text("#!/bin/sh\n")
-    script.chmod(0o755)
-    output_dir = tmp_path / "out"
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              run.sh | #!/bin/sh\\n
+            out
+        """),
+    )
+    (tmp_path / "in" / "run.sh").chmod(0o755)
 
-    assert _render(input_dir, output_dir) == 0
-    assert (output_dir / "run.sh").stat().st_mode & 0o777 == 0o755
+    assert _render(tmp_path / "in", tmp_path / "out") == 0
+    assert (tmp_path / "out" / "run.sh").stat().st_mode & 0o777 == 0o755
 
 
 def test_renders_files_in_sorted_path_order(
-    vault: Path, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    vault: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     with caplog.at_level(logging.INFO, logger="documator"):
-        assert _render(vault, tmp_path / "out") == 0
+        assert _render(vault / "in", vault / "out") == 0
 
     rendered = [
         record.message.removeprefix("rendered ")
@@ -112,21 +134,21 @@ def test_renders_files_in_sorted_path_order(
 
 
 def test_identical_input_and_output_is_an_operational_error(vault: Path) -> None:
-    assert _render(vault, vault) == 2
+    assert _render(vault / "in", vault / "in") == 2
 
 
 def test_output_nested_in_input_is_an_operational_error(vault: Path) -> None:
-    assert _render(vault, vault / "sub" / "out") == 2
+    nested = vault / "in" / "sub" / "out"
+    nested.mkdir()
+
+    assert _render(vault / "in", nested) == 2
 
 
-def test_input_nested_in_output_is_an_operational_error(
-    vault: Path, tmp_path: Path
-) -> None:
-    assert _render(vault, tmp_path) == 2
+def test_input_nested_in_output_is_an_operational_error(vault: Path) -> None:
+    assert _render(vault / "in", vault) == 2
 
 
 def test_empty_input_directory_exits_zero(tmp_path: Path) -> None:
-    input_dir = tmp_path / "in"
-    input_dir.mkdir()
+    build_tree(tmp_path, TreeLayout("in\nout"))
 
-    assert _render(input_dir, tmp_path / "out") == 0
+    assert _render(tmp_path / "in", tmp_path / "out") == 0

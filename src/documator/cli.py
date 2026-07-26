@@ -6,8 +6,7 @@ from typing import Annotated
 import typer
 from pydantic import RootModel, ValidationError
 
-from documator.domain import ExitCode, InputDir, OutputDir
-from documator.render import DEFAULT_TIMEOUT
+from documator.domain import ExitCode, InputDir, OutputDir, TimeoutSeconds
 from documator.render import render as _render
 
 app = typer.Typer(name="documator", add_completion=False)
@@ -33,7 +32,7 @@ def render(
     input_dir: Annotated[InputDir, typer.Argument(parser=_parsed(InputDir))],
     output_dir: Annotated[OutputDir, typer.Argument(parser=_parsed(OutputDir))],
 ) -> None:
-    raise typer.Exit(_render(input_dir, output_dir, DEFAULT_TIMEOUT))
+    raise typer.Exit(_render(input_dir, output_dir, TimeoutSeconds(10.0)))
 
 
 def main(argv: list[str] | None = None) -> int:

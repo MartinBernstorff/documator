@@ -5,11 +5,6 @@ from typing import NewType
 
 from documator.domain import ExitCode, InputDir, OutputDir, TimeoutSeconds
 
-DEFAULT_TIMEOUT = TimeoutSeconds(10.0)
-
-EXIT_CLEAN = ExitCode(0)
-EXIT_OPERATIONAL = ExitCode(2)
-
 RelativePath = NewType("RelativePath", Path)
 
 log = logging.getLogger("documator")
@@ -53,7 +48,7 @@ def render(
     conflict = _directory_conflict(input_dir, output_dir)
     if conflict is not None:
         log.error(conflict)
-        return EXIT_OPERATIONAL
+        return ExitCode(2)
 
     relative_paths = _relative_files(input_dir)
 
@@ -66,4 +61,4 @@ def render(
         shutil.copy2(input_dir.root / relative, target)
         log.info("rendered %s", relative)
 
-    return EXIT_CLEAN
+    return ExitCode(0)
