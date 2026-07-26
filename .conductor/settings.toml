@@ -1,5 +1,4 @@
 "$schema" = "https://conductor.build/schemas/settings.repo.schema.json"
 
 [scripts]
-setup = "uv sync && lefthook install"
-run_mode = "concurrent"
+setup = "uv sync && uv run lefthook install"

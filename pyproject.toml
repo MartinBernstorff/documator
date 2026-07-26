@@ -35,6 +35,7 @@ addopts = "-ra -n auto --testmon"
 
 [dependency-groups]
 dev = [
+    "lefthook>=2.1.10",
     "pyrefly>=1.1.1",
     "pytest>=9.1.1",
     "pytest-randomly>=4.1.0",
