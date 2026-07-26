@@ -9,7 +9,7 @@ fileGroups:
   sources:
     - 'src/**/*.py'
   tests:
-    - 'tests/**/*.py'
+    - 'src/**/test_*.py'
 
 tasks:
   test:

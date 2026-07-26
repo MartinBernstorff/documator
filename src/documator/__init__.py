@@ -1,3 +1,1 @@
-from documator.cli import main
-
-__all__ = ["main"]
+from documator.cli import *  # noqa: F403
