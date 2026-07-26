@@ -34,5 +34,17 @@ class InputDir(ExistingDir): ...
 class OutputDir(ExistingDir): ...
 
 
-TimeoutSeconds = NewType("TimeoutSeconds", float)
+class TimeoutSeconds(RootModel[float]):
+    @field_validator("root")
+    @classmethod
+    def _is_positive(cls, value: float) -> float:
+        if value <= 0:
+            raise PydanticCustomError(
+                "timeout_not_positive",
+                "timeout must be positive: {seconds}",
+                {"seconds": value},
+            )
+        return value
+
+
 ExitCode = NewType("ExitCode", int)

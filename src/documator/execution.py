@@ -28,10 +28,10 @@ def _capture(command: Command, timeout: TimeoutSeconds) -> CapturedOutput:
         start_new_session=True,
     ) as process:
         try:
-            output = CapturedOutput(process.communicate(timeout=timeout)[0])
+            output = CapturedOutput(process.communicate(timeout=timeout.root)[0])
         except subprocess.TimeoutExpired:
             return _annotated(
-                _killed(process), Annotation(f"timed out after {timeout}s")
+                _killed(process), Annotation(f"timed out after {timeout.root}s")
             )
     status = ExitCode(process.returncode)
     if status == 0:
