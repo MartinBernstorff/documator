@@ -29,7 +29,9 @@ Run everything at once with `moon check --all`, or `moon ci --base main` for the
 ## Code conventions
 
 - **Never allow primitives as function parameters.** Wrap them in a `NewType` or a pydantic `RootModel` so each value carries its domain meaning — e.g. `UserId = NewType("UserId", int)` rather than a bare `int`.
+- **No named constants.** Inline the literal at its point of use. If a value carries domain meaning, give it a type (`NewType`, `RootModel`, or an `Enum` member) rather than a module-level `NAME = value`.
 - **Do not maintain a `tests` folder.** Place tests next to the code they test, as `test_<module>.py`.
+- **Do not use fixtures or shared constants to set up test data.** Inline the setup in each test so it reads independently.
 - **Never maintain a `__all__` list.** Instead, re-export with `from .module import *` in the package's `__init__.py`.
 - **Prefer iterators over manual for-loops.** Use `iterpy`: `Arr([1, 2, 3]).map(lambda x: x + 1).filter(lambda x: x > 2).to_list()`.
 - Commits are automatically validated through pre-commit hooks (lefthook → `moon ci`).
