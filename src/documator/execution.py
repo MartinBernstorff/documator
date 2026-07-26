@@ -1,12 +1,16 @@
+import contextlib
+import os
 import re
+import signal
 import subprocess
 from typing import NewType
 
-from documator.domain import TimeoutSeconds
+from documator.domain import ExitCode, TimeoutSeconds
 
 Command = NewType("Command", str)
 CapturedOutput = NewType("CapturedOutput", str)
 OutputBlock = NewType("OutputBlock", str)
+Annotation = NewType("Annotation", str)
 
 
 def execute_block(command: Command, timeout: TimeoutSeconds) -> OutputBlock:
@@ -14,37 +18,47 @@ def execute_block(command: Command, timeout: TimeoutSeconds) -> OutputBlock:
 
 
 def _capture(command: Command, timeout: TimeoutSeconds) -> CapturedOutput:
-    try:
-        completed = subprocess.run(
-            command,
-            shell=True,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            check=False,
-        )
-    except subprocess.TimeoutExpired as expired:
-        return _marked(_decoded(expired.stdout), f"timed out after {timeout}s")
-    merged = CapturedOutput(completed.stdout + completed.stderr)
-    if completed.returncode == 0:
-        return merged
-    return _marked(merged, f"exit {completed.returncode}")
+    # One pipe for both streams, so writes stay in the order the command made them.
+    with subprocess.Popen(
+        command,
+        shell=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        start_new_session=True,
+    ) as process:
+        try:
+            output = CapturedOutput(process.communicate(timeout=timeout)[0])
+        except subprocess.TimeoutExpired:
+            return _annotated(
+                _killed(process), Annotation(f"timed out after {timeout}s")
+            )
+    status = ExitCode(process.returncode)
+    if status == 0:
+        return output
+    return _annotated(output, Annotation(f"exit {status}"))
 
 
-def _decoded(partial: str | bytes | None) -> CapturedOutput:
-    if isinstance(partial, bytes):
-        return CapturedOutput(partial.decode(errors="replace"))
-    return CapturedOutput(partial or "")
+# Kill the whole session, else a backgrounded grandchild holds the pipe open forever.
+# start_new_session makes the shell's pid the group id, which outlives the shell itself.
+def _killed(process: subprocess.Popen[str]) -> CapturedOutput:
+    with contextlib.suppress(ProcessLookupError):
+        os.killpg(process.pid, signal.SIGKILL)
+    return CapturedOutput(process.communicate()[0])
 
 
-def _marked(output: CapturedOutput, note: str) -> CapturedOutput:
-    return CapturedOutput(f"{output.rstrip('\n')}\n[documator: {note}]".lstrip("\n"))
+def _annotated(output: CapturedOutput, note: Annotation) -> CapturedOutput:
+    return CapturedOutput(f"{_trimmed(output)}\n[documator: {note}]".lstrip("\n"))
 
 
 def _fenced(output: CapturedOutput) -> OutputBlock:
     delimiter = "`" * max(3, _longest_backtick_run(output) + 1)
-    body = f"{output.rstrip('\n')}\n" if output.strip() else ""
+    body = f"{_trimmed(output)}\n" if output.strip() else ""
     return OutputBlock(f"{delimiter}\n{body}{delimiter}\n")
+
+
+def _trimmed(output: CapturedOutput) -> CapturedOutput:
+    return CapturedOutput(output.rstrip("\n"))
 
 
 def _longest_backtick_run(output: CapturedOutput) -> int:
