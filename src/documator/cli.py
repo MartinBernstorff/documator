@@ -6,8 +6,9 @@ import typer
 from pydantic import BaseModel, ValidationError
 
 from documator.domain import ExitCode, InputDir, OutputDir, TimeoutSeconds
-from documator.render import DEFAULT_TIMEOUT
+from documator.engine import DEFAULT_TIMEOUT
 from documator.render import render as _render
+from documator.skills import skills as _skills
 from documator.watch import watch as _watch
 
 app = typer.Typer(name="documator", add_completion=False)
@@ -40,6 +41,18 @@ def render(
 ) -> None:
     run = _watch if watch else _render
     raise typer.Exit(run(input_dir, output_dir, timeout))
+
+
+@app.command()
+def skills(
+    input_dir: Annotated[InputDir, typer.Argument(parser=_parsed(InputDir))],
+    output_dir: Annotated[OutputDir, typer.Argument(parser=_parsed(OutputDir))],
+    timeout: Annotated[
+        TimeoutSeconds,
+        typer.Option("--timeout", metavar="SECONDS", parser=_parsed(TimeoutSeconds)),
+    ] = DEFAULT_TIMEOUT,
+) -> None:
+    raise typer.Exit(_skills(input_dir, output_dir, timeout))
 
 
 def main(argv: list[str] | None = None) -> int:
