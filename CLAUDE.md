@@ -18,9 +18,7 @@ Always run tasks through **moon**, never the tool directly. This runs dependenci
 | Type-check | `moon run documator:typecheck` | pyrefly (`preset = all`) |
 | Modularity | `moon run documator:modularity` | tach |
 
-Run everything at once with `moon ci --base main` — the same affected-only pass CI and the pre-commit hook run. Prefer it over `moon check --all`. Because it is affected-only, a change no task declares as an input resolves zero targets and passes trivially; add `--force` to bypass affected detection and the cache and run every task.
-
-Tasks come in `check` and `fix` pairs where the tool can auto-fix. The `fix` variants are `type: 'run'` and `runInCI: false`, so `moon ci` never rewrites your files — it only checks. Only the pre-commit hook (and an explicit `moon run`) invokes the `fix` variants, and it re-stages what they rewrite. `format-fix` depends on `lint-fix`, because `ruff check --fix` can emit code that still needs formatting.
+Run everything at once with `moon ci` — the same affected-only pass CI and the pre-commit hook run. Add `--force` to bypass affected detection and the cache and run every task.
 
 ## Conventions
 
