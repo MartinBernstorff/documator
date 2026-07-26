@@ -1,5 +1,7 @@
 import logging
 import shutil
+from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
 from typing import NewType
 
@@ -10,16 +12,34 @@ RelativePath = NewType("RelativePath", Path)
 log = logging.getLogger("documator")
 
 
-def _directory_conflict(input_dir: InputDir, output_dir: OutputDir) -> str | None:
+class ConflictReason(StrEnum):
+    IDENTICAL = "input and output directories are the same"
+    OUTPUT_NESTED_IN_INPUT = "output directory is nested inside the input directory"
+    INPUT_NESTED_IN_OUTPUT = "input directory is nested inside the output directory"
+
+
+@dataclass(frozen=True)
+class DirectoryConflict:
+    reason: ConflictReason
+    input_dir: Path
+    output_dir: Path
+
+
+def _directory_conflict(
+    input_dir: InputDir, output_dir: OutputDir
+) -> DirectoryConflict | None:
     source = input_dir.root.resolve()
     destination = output_dir.root.resolve()
+    reason = None
     if source == destination:
-        return f"input and output directories are the same: {source}"
-    if destination.is_relative_to(source):
-        return f"output directory {destination} is nested inside input {source}"
-    if source.is_relative_to(destination):
-        return f"input directory {source} is nested inside output {destination}"
-    return None
+        reason = ConflictReason.IDENTICAL
+    elif destination.is_relative_to(source):
+        reason = ConflictReason.OUTPUT_NESTED_IN_INPUT
+    elif source.is_relative_to(destination):
+        reason = ConflictReason.INPUT_NESTED_IN_OUTPUT
+    if reason is None:
+        return None
+    return DirectoryConflict(reason, source, destination)
 
 
 def _relative_files(input_dir: InputDir) -> list[RelativePath]:
@@ -47,7 +67,12 @@ def render(
 ) -> ExitCode:
     conflict = _directory_conflict(input_dir, output_dir)
     if conflict is not None:
-        log.error(conflict)
+        log.error(
+            "%s: input=%s output=%s",
+            conflict.reason,
+            conflict.input_dir,
+            conflict.output_dir,
+        )
         return ExitCode(2)
 
     relative_paths = _relative_files(input_dir)

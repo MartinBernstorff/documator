@@ -4,37 +4,32 @@ from pathlib import Path
 import pytest
 
 from documator.domain import InputDir, OutputDir, TimeoutSeconds
-from documator.render import render
+from documator.render import ConflictReason, render
 from documator.tree_layout import TreeLayout, build_tree
-
-VAULT = TreeLayout("""
-    in
-      note.md | # Note\\n
-      sub
-        nested.md | nested\\n
-        data.csv | a,b\\n1,2\\n
-    out
-""")
 
 
 def _render(input_dir: Path, output_dir: Path) -> int:
     return render(InputDir(input_dir), OutputDir(output_dir), TimeoutSeconds(10.0))
 
 
-@pytest.fixture
-def vault(tmp_path: Path) -> Path:
-    build_tree(tmp_path, VAULT)
-    return tmp_path
+def test_mirrors_input_tree_verbatim(tmp_path: Path) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              note.md | # Note\\n
+              sub
+                nested.md | nested\\n
+                data.csv | a,b\\n1,2\\n
+            out
+        """),
+    )
 
+    assert _render(tmp_path / "in", tmp_path / "out") == 0
 
-def test_mirrors_input_tree_verbatim(vault: Path) -> None:
-    output_dir = vault / "out"
-
-    assert _render(vault / "in", output_dir) == 0
-
-    assert (output_dir / "note.md").read_text() == "# Note\n"
-    assert (output_dir / "sub" / "nested.md").read_text() == "nested\n"
-    assert (output_dir / "sub" / "data.csv").read_text() == "a,b\n1,2\n"
+    assert (tmp_path / "out" / "note.md").read_text() == "# Note\n"
+    assert (tmp_path / "out" / "sub" / "nested.md").read_text() == "nested\n"
+    assert (tmp_path / "out" / "sub" / "data.csv").read_text() == "a,b\n1,2\n"
 
 
 def test_copies_binary_files_verbatim(tmp_path: Path) -> None:
@@ -57,12 +52,11 @@ def test_prunes_output_paths_not_produced_by_this_run(tmp_path: Path) -> None:
                 stale.md | stale\\n
         """),
     )
-    output_dir = tmp_path / "out"
 
-    assert _render(tmp_path / "in", output_dir) == 0
+    assert _render(tmp_path / "in", tmp_path / "out") == 0
 
-    assert not (output_dir / "gone").exists()
-    assert (output_dir / "note.md").exists()
+    assert not (tmp_path / "out" / "gone").exists()
+    assert (tmp_path / "out" / "note.md").exists()
 
 
 def test_stale_file_does_not_block_a_path_that_became_a_directory(
@@ -78,10 +72,9 @@ def test_stale_file_does_not_block_a_path_that_became_a_directory(
               note.md | stale\\n
         """),
     )
-    output_dir = tmp_path / "out"
 
-    assert _render(tmp_path / "in", output_dir) == 0
-    assert (output_dir / "note.md" / "inner.md").read_text() == "inner\n"
+    assert _render(tmp_path / "in", tmp_path / "out") == 0
+    assert (tmp_path / "out" / "note.md" / "inner.md").read_text() == "inner\n"
 
 
 def test_stale_directory_does_not_block_a_path_that_became_a_file(
@@ -97,10 +90,9 @@ def test_stale_directory_does_not_block_a_path_that_became_a_file(
                 stale.md | stale\\n
         """),
     )
-    output_dir = tmp_path / "out"
 
-    assert _render(tmp_path / "in", output_dir) == 0
-    assert (output_dir / "note.md").read_text() == "note\n"
+    assert _render(tmp_path / "in", tmp_path / "out") == 0
+    assert (tmp_path / "out" / "note.md").read_text() == "note\n"
 
 
 def test_copies_file_mode(tmp_path: Path) -> None:
@@ -119,10 +111,22 @@ def test_copies_file_mode(tmp_path: Path) -> None:
 
 
 def test_renders_files_in_sorted_path_order(
-    vault: Path, caplog: pytest.LogCaptureFixture
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              note.md | # Note\\n
+              sub
+                nested.md | nested\\n
+                data.csv | a,b\\n1,2\\n
+            out
+        """),
+    )
+
     with caplog.at_level(logging.INFO, logger="documator"):
-        assert _render(vault / "in", vault / "out") == 0
+        assert _render(tmp_path / "in", tmp_path / "out") == 0
 
     rendered = [
         record.message.removeprefix("rendered ")
@@ -133,19 +137,43 @@ def test_renders_files_in_sorted_path_order(
     assert rendered == ["note.md", "sub/data.csv", "sub/nested.md"]
 
 
-def test_identical_input_and_output_is_an_operational_error(vault: Path) -> None:
-    assert _render(vault / "in", vault / "in") == 2
+def test_identical_input_and_output_is_an_operational_error(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    build_tree(tmp_path, TreeLayout("in"))
+
+    with caplog.at_level(logging.ERROR, logger="documator"):
+        assert _render(tmp_path / "in", tmp_path / "in") == 2
+
+    assert ConflictReason.IDENTICAL in caplog.text
 
 
-def test_output_nested_in_input_is_an_operational_error(vault: Path) -> None:
-    nested = vault / "in" / "sub" / "out"
-    nested.mkdir()
+def test_output_nested_in_input_is_an_operational_error(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              out
+        """),
+    )
 
-    assert _render(vault / "in", nested) == 2
+    with caplog.at_level(logging.ERROR, logger="documator"):
+        assert _render(tmp_path / "in", tmp_path / "in" / "out") == 2
+
+    assert ConflictReason.OUTPUT_NESTED_IN_INPUT in caplog.text
 
 
-def test_input_nested_in_output_is_an_operational_error(vault: Path) -> None:
-    assert _render(vault / "in", vault) == 2
+def test_input_nested_in_output_is_an_operational_error(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    build_tree(tmp_path, TreeLayout("in"))
+
+    with caplog.at_level(logging.ERROR, logger="documator"):
+        assert _render(tmp_path / "in", tmp_path) == 2
+
+    assert ConflictReason.INPUT_NESTED_IN_OUTPUT in caplog.text
 
 
 def test_empty_input_directory_exits_zero(tmp_path: Path) -> None:
