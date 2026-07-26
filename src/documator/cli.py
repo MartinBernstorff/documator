@@ -19,7 +19,8 @@ def render(input_dir: Path, output_dir: Path) -> None:
     try:
         source, destination = InputDir(input_dir), OutputDir(output_dir)
     except ValidationError as error:
-        typer.echo(str(error), err=True)
+        for problem in error.errors():
+            typer.echo(problem["msg"], err=True)
         raise typer.Exit(OPERATIONAL_ERROR) from error
     raise typer.Exit(_render(source, destination, DEFAULT_TIMEOUT))
 
