@@ -3,7 +3,13 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from documator.domain import ExistingPath, InputDir, OutputDir, TimeoutSeconds
+from documator.domain import (
+    ExistingFile,
+    ExistingPath,
+    InputDir,
+    OutputDir,
+    TimeoutSeconds,
+)
 from documator.tree_layout import TreeLayout, build_tree
 
 
@@ -14,6 +20,17 @@ def test_existing_path_accepts_existing_path(tmp_path: Path) -> None:
 def test_existing_path_rejects_missing_path(tmp_path: Path) -> None:
     with pytest.raises(ValidationError):
         ExistingPath(tmp_path / "nope")
+
+
+def test_existing_file_accepts_a_file(tmp_path: Path) -> None:
+    build_tree(tmp_path, TreeLayout("note.md |"))
+
+    assert ExistingFile(tmp_path / "note.md").root == tmp_path / "note.md"
+
+
+def test_existing_file_rejects_a_directory(tmp_path: Path) -> None:
+    with pytest.raises(ValidationError):
+        ExistingFile(tmp_path)
 
 
 def test_input_dir_rejects_file(tmp_path: Path) -> None:

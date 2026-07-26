@@ -3,9 +3,11 @@ from pathlib import Path
 
 import pytest
 from inline_snapshot import snapshot
+from pydantic import ValidationError
 
 from documator.domain import InputDir, OutputDir, TimeoutSeconds
 from documator.render import render
+from documator.transclusion import NotePath
 from documator.tree_layout import TreeLayout, assert_tree, build_tree
 
 
@@ -469,3 +471,8 @@ def test_an_embed_of_a_file_the_vault_lacks_is_an_error(tmp_path: Path) -> None:
     assert (tmp_path / "out" / "index.md").read_text() == snapshot("""\
 [documator: no note matches transclusion "Release 1.0 notes"]
 """)
+
+
+def test_a_vault_path_must_be_relative_to_the_vault(tmp_path: Path) -> None:
+    with pytest.raises(ValidationError):
+        NotePath(tmp_path / "note.md")

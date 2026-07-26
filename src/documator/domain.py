@@ -27,6 +27,17 @@ class ExistingDir(ExistingPath):
         return value
 
 
+class ExistingFile(ExistingPath):
+    @field_validator("root")
+    @classmethod
+    def _path_is_file(cls, value: Path) -> Path:
+        if not value.is_file():
+            raise PydanticCustomError(
+                "path_not_file", "path is not a file: {path}", {"path": value}
+            )
+        return value
+
+
 class InputDir(ExistingDir): ...
 
 

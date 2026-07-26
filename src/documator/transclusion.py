@@ -1,17 +1,41 @@
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import NewType
+from typing import NewType, override
 
 from iterpy import Arr
+from pydantic import RootModel, field_validator
+from pydantic_core import PydanticCustomError
 
-from documator.domain import InputDir, WorkingDir
+from documator.domain import ExistingFile, InputDir, WorkingDir
 
 Reference = NewType("Reference", str)
-# Relative to the vault root, so a note reads the same from anywhere in the tree.
-NotePath = NewType("NotePath", Path)
-AttachmentPath = NewType("AttachmentPath", Path)
 CanonicalName = NewType("CanonicalName", tuple[str, ...])
+
+
+# Held relative to the vault root, so a reference, a cycle chain and an ambiguity
+# report all read the same no matter where the vault itself lives.
+class VaultPath(RootModel[Path]):
+    @field_validator("root")
+    @classmethod
+    def _path_is_relative(cls, value: Path) -> Path:
+        if value.is_absolute():
+            raise PydanticCustomError(
+                "path_not_relative",
+                "path is not relative to the vault: {path}",
+                {"path": value},
+            )
+        return value
+
+    @override
+    def __str__(self) -> str:
+        return str(self.root)
+
+
+class NotePath(VaultPath): ...
+
+
+class AttachmentPath(VaultPath): ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,11 +91,16 @@ class Vault:
     notes: tuple[NotePath, ...]
     attachments: tuple[AttachmentPath, ...]
 
+    # Indexing and reading are separate steps, so joining is where a note that left
+    # the vault mid-run stops being a guess.
+    def source(self, note: NotePath) -> ExistingFile:
+        return ExistingFile(self.root / note.root)
+
     def read(self, note: NotePath) -> str:
-        return (self.root / note).read_text(encoding="utf-8")
+        return self.source(note).root.read_text(encoding="utf-8")
 
     def beside(self, note: NotePath) -> WorkingDir:
-        return WorkingDir((self.root / note).parent)
+        return WorkingDir(self.source(note).root.parent)
 
 
 def index(input_dir: InputDir) -> Vault:

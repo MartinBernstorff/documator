@@ -144,7 +144,7 @@ def _render_transclusion(
     resolution = resolve(origin.vault, reference, origin.chain)
     if isinstance(resolution, NonNoteEmbed):
         return _Rendered(Markdown(str(resolution)), [])
-    if isinstance(resolution, Path):
+    if isinstance(resolution, NotePath):
         log.info("transcluding %s into %s", resolution, origin.note())
         return _render_markdown(
             Markdown(origin.vault.read(resolution)),
@@ -199,7 +199,7 @@ def render(
         if source.suffix.lower() == ".md":
             rendered = _render_markdown(
                 Markdown(source.read_text(encoding="utf-8")),
-                _Origin(vault, (NotePath(Path(relative)),)),
+                _Origin(vault, (NotePath(relative),)),
                 timeout,
             )
             target.write_text(rendered.text, encoding="utf-8")
