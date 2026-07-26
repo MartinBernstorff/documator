@@ -6,7 +6,7 @@ import subprocess
 from dataclasses import dataclass
 from typing import NewType
 
-from documator.domain import ExitCode, TimeoutSeconds
+from documator.domain import ExitCode, TimeoutSeconds, WorkingDir
 
 Command = NewType("Command", str)
 CapturedOutput = NewType("CapturedOutput", str)
@@ -28,8 +28,10 @@ class ExecutedBlock:
     failure: Annotation | None
 
 
-def execute_block(command: Command, timeout: TimeoutSeconds) -> ExecutedBlock:
-    capture = _capture(command, timeout)
+def execute_block(
+    command: Command, working_dir: WorkingDir, timeout: TimeoutSeconds
+) -> ExecutedBlock:
+    capture = _capture(command, working_dir, timeout)
     return ExecutedBlock(_fenced(_annotated_body(capture)), capture.failure)
 
 
@@ -37,11 +39,14 @@ def marker(note: Annotation) -> str:
     return f"[documator: {note}]"
 
 
-def _capture(command: Command, timeout: TimeoutSeconds) -> _Capture:
+def _capture(
+    command: Command, working_dir: WorkingDir, timeout: TimeoutSeconds
+) -> _Capture:
     # One pipe for both streams, so writes stay in the order the command made them.
     with subprocess.Popen(
         command,
         shell=True,
+        cwd=working_dir.root,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,

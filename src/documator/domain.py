@@ -34,6 +34,10 @@ class InputDir(ExistingDir): ...
 class OutputDir(ExistingDir): ...
 
 
+# A block reads paths the way its own document does, so it runs beside the source file.
+class WorkingDir(ExistingDir): ...
+
+
 class TimeoutSeconds(RootModel[float]):
     @field_validator("root")
     @classmethod
