@@ -23,7 +23,7 @@ Run everything at once with `moon check --all`, or `moon ci --base main` for the
 - Never invoke `pytest`/`ruff`/`pyrefly`/`tach` directly — go through `moon run`.
 - When adding a new tool, wire it as a moon task **and** add it to the pre-commit hook (`lefthook.yml`). If the tool can auto-fix, run the fixing variant in the hook rather than the checking one.
 - Dependencies are managed with `uv` (`uv add`, `uv add --dev`). The lockfile is `uv.lock`.
-- Pre-commit runs `moon ci` via lefthook. Run `lefthook install` after cloning.
+- Pre-commit runs `moon ci` via lefthook. `.conductor/settings.toml` installs the hooks on workspace creation (`scripts.setup`); outside Conductor, run `uv sync && lefthook install` after cloning.
 
 ## Code conventions
 
