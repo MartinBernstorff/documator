@@ -334,6 +334,47 @@ def test_embedded_output_cannot_inject_links_or_tags(tmp_path: Path) -> None:
     assert "Note" in rendered
 
 
+def test_non_ascii_content_round_trips(tmp_path: Path) -> None:
+    build_tree(tmp_path, TreeLayout("in\nout"))
+    (tmp_path / "in" / "note.md").write_text("blåbær — 日本\n", encoding="utf-8")
+
+    assert _render(tmp_path / "in", tmp_path / "out") == 0
+
+    assert (tmp_path / "out" / "note.md").read_text(encoding="utf-8") == (
+        "blåbær — 日本\n"
+    )
+
+
+def test_undecodable_command_output_does_not_abort_the_render(tmp_path: Path) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              note.md | ```\\n!printf '\\\\xff'; echo ok\\n```\\n
+            out
+        """),
+    )
+
+    assert _render(tmp_path / "in", tmp_path / "out") == 0
+
+    assert "ok" in (tmp_path / "out" / "note.md").read_text(encoding="utf-8")
+
+
+def test_uppercase_markdown_extension_is_parsed(tmp_path: Path) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              NOTE.MD | ```\\n!echo hi\\n```\\n
+            out
+        """),
+    )
+
+    assert _render(tmp_path / "in", tmp_path / "out") == 0
+
+    assert (tmp_path / "out" / "NOTE.MD").read_text() == "```\nhi\n```\n"
+
+
 def test_logs_each_executed_block_with_its_file(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:

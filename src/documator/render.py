@@ -8,7 +8,7 @@ from typing import NewType
 from iterpy import Arr
 
 from documator.domain import ExitCode, InputDir, OutputDir, TimeoutSeconds
-from documator.execution import Annotation, execute_block
+from documator.execution import Annotation, execute_block, marker
 from documator.parsing import (
     Block,
     ExecutableBlock,
@@ -100,8 +100,7 @@ def _render_block(
         case StructuralErrorBlock(text, reason):
             failure = Annotation(reason.message)
             log.error("%s in %s", failure, relative)
-            marked = Markdown(f"{text}\n[documator: {failure}]\n")
-            return _RenderedBlock(marked, failure)
+            return _RenderedBlock(Markdown(f"{text}\n{marker(failure)}\n"), failure)
 
 
 def _render_markdown(
@@ -139,9 +138,11 @@ def render(
         source = input_dir.root / relative
         target = output_dir.root / relative
         target.parent.mkdir(parents=True, exist_ok=True)
-        if source.suffix == ".md":
-            rendered = _render_markdown(Markdown(source.read_text()), relative, timeout)
-            target.write_text(rendered.text)
+        if source.suffix.lower() == ".md":
+            rendered = _render_markdown(
+                Markdown(source.read_text(encoding="utf-8")), relative, timeout
+            )
+            target.write_text(rendered.text, encoding="utf-8")
             failures.extend(rendered.failures)
         else:
             shutil.copy2(source, target)

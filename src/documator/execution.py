@@ -30,7 +30,11 @@ class ExecutedBlock:
 
 def execute_block(command: Command, timeout: TimeoutSeconds) -> ExecutedBlock:
     capture = _capture(command, timeout)
-    return ExecutedBlock(_fenced(_body(capture)), capture.failure)
+    return ExecutedBlock(_fenced(_annotated_body(capture)), capture.failure)
+
+
+def marker(note: Annotation) -> str:
+    return f"[documator: {note}]"
 
 
 def _capture(command: Command, timeout: TimeoutSeconds) -> _Capture:
@@ -41,6 +45,10 @@ def _capture(command: Command, timeout: TimeoutSeconds) -> _Capture:
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
+        # A command's bytes are its own business; never let the locale decide, and
+        # never let undecodable output abort the render.
+        encoding="utf-8",
+        errors="replace",
         start_new_session=True,
     ) as process:
         try:
@@ -61,11 +69,11 @@ def _killed(process: subprocess.Popen[str]) -> CapturedOutput:
     return CapturedOutput(process.communicate()[0])
 
 
-def _body(capture: _Capture) -> CapturedOutput:
+def _annotated_body(capture: _Capture) -> CapturedOutput:
     output = _neutralized(_trimmed(capture.output))
     if capture.failure is None:
         return output
-    return CapturedOutput(f"{output}\n[documator: {capture.failure}]".lstrip("\n"))
+    return CapturedOutput(f"{output}\n{marker(capture.failure)}".lstrip("\n"))
 
 
 # Output lands in the reader's vault, so a zero-width space strips its power to

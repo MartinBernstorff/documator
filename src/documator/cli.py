@@ -6,6 +6,10 @@ from typing import Annotated
 import typer
 from pydantic import RootModel, ValidationError
 
+# Typer vendors its own click, so the UsageError it raises is not the one `import
+# click` resolves to.
+from typer._click.exceptions import UsageError
+
 from documator.domain import ExitCode, InputDir, OutputDir, TimeoutSeconds
 from documator.render import render as _render
 
@@ -55,6 +59,6 @@ def main(argv: list[str] | None = None) -> int:
     command = typer.main.get_command(app)
     try:
         return command.main(args=argv, standalone_mode=False) or 0
-    except typer.BadParameter as error:
+    except UsageError as error:
         error.show()
         return ExitCode(error.exit_code)

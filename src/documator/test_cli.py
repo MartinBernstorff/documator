@@ -75,6 +75,15 @@ def test_render_with_a_non_numeric_timeout_exits_two(tmp_path: Path) -> None:
     assert main(["render", str(input_dir), str(output_dir), "--timeout", "soon"]) == 2
 
 
+def test_render_with_an_unknown_option_exits_two(tmp_path: Path) -> None:
+    input_dir = tmp_path / "in"
+    input_dir.mkdir()
+    output_dir = tmp_path / "out"
+    output_dir.mkdir()
+
+    assert main(["render", str(input_dir), str(output_dir), "--timeut", "5"]) == 2
+
+
 def test_render_with_a_non_positive_timeout_exits_two(tmp_path: Path) -> None:
     input_dir = tmp_path / "in"
     input_dir.mkdir()
