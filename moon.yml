@@ -1,0 +1,49 @@
+$schema: 'https://moonrepo.dev/schemas/project.json'
+
+language: 'python'
+stack: 'backend'
+layer: 'application'
+tags: ['backend']
+
+fileGroups:
+  sources:
+    - 'src/**/*.py'
+  tests:
+    - 'tests/**/*.py'
+
+tasks:
+  test:
+    script: 'uv run pytest'
+    inputs:
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - '@group(sources)'
+      - '@group(tests)'
+
+  lint:
+    script: 'uv run ruff check'
+    inputs:
+      - 'pyproject.toml'
+      - '@group(sources)'
+      - '@group(tests)'
+
+  format:
+    script: 'uv run ruff format --check'
+    inputs:
+      - 'pyproject.toml'
+      - '@group(sources)'
+      - '@group(tests)'
+
+  typecheck:
+    script: 'uv run pyrefly check'
+    inputs:
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - '@group(sources)'
+      - '@group(tests)'
+
+  modularity:
+    script: 'uv run tach check'
+    inputs:
+      - 'tach.toml'
+      - '@group(sources)'
