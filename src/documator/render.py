@@ -7,7 +7,7 @@ from typing import NewType
 
 from iterpy import Arr
 
-from documator.domain import ExitCode, InputDir, OutputDir, TimeoutSeconds
+from documator.domain import ExitCode, InputDir, OutputDir, TimeoutSeconds, WorkingDir
 from documator.execution import Annotation, execute_block, marker
 from documator.parsing import (
     Block,
@@ -88,14 +88,17 @@ class _RenderedMarkdown:
 
 
 def _render_block(
-    block: Block, relative: RelativePath, timeout: TimeoutSeconds
+    block: Block,
+    relative: RelativePath,
+    working_dir: WorkingDir,
+    timeout: TimeoutSeconds,
 ) -> _RenderedBlock:
     match block:
         case PassthroughBlock(text):
             return _RenderedBlock(text, None)
         case ExecutableBlock(command):
             log.info("executing %s in %s", command, relative)
-            executed = execute_block(command, timeout)
+            executed = execute_block(command, working_dir, timeout)
             if executed.failure is not None:
                 log.error("%s in %s: %s", command, relative, executed.failure)
             return _RenderedBlock(Markdown(executed.block), executed.failure)
@@ -106,10 +109,13 @@ def _render_block(
 
 
 def _render_markdown(
-    source: Markdown, relative: RelativePath, timeout: TimeoutSeconds
+    source: Markdown,
+    relative: RelativePath,
+    working_dir: WorkingDir,
+    timeout: TimeoutSeconds,
 ) -> _RenderedMarkdown:
     blocks = Arr(parse(source)).map(
-        lambda block: _render_block(block, relative, timeout)
+        lambda block: _render_block(block, relative, working_dir, timeout)
     )
     return _RenderedMarkdown(
         Markdown("".join(blocks.map(lambda block: block.text))),
@@ -142,7 +148,10 @@ def render(
         target.parent.mkdir(parents=True, exist_ok=True)
         if source.suffix.lower() == ".md":
             rendered = _render_markdown(
-                Markdown(source.read_text(encoding="utf-8")), relative, timeout
+                Markdown(source.read_text(encoding="utf-8")),
+                relative,
+                WorkingDir(source.parent),
+                timeout,
             )
             target.write_text(rendered.text, encoding="utf-8")
             failures.extend(rendered.failures)

@@ -2,6 +2,7 @@ import logging
 from pathlib import Path
 
 import pytest
+from inline_snapshot import snapshot
 
 from documator.domain import InputDir, OutputDir, TimeoutSeconds
 from documator.render import ConflictReason, render
@@ -242,6 +243,27 @@ def test_executable_block_is_replaced_by_its_output(tmp_path: Path) -> None:
     assert (tmp_path / "out" / "note.md").read_text() == (
         "# Note\n\n```\nhi\n```\n\nafter\n"
     )
+
+
+def test_block_runs_beside_its_own_file(tmp_path: Path) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              sub
+                note.md | ```\\n!cat sibling.txt\\n```\\n
+                sibling.txt | neighbour\\n
+            out
+        """),
+    )
+
+    assert _render(tmp_path / "in", tmp_path / "out") == 0
+
+    assert (tmp_path / "out" / "sub" / "note.md").read_text() == snapshot("""\
+```
+neighbour
+```
+""")
 
 
 def test_non_markdown_file_is_copied_without_executing_its_blocks(
