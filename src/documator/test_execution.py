@@ -1,42 +1,123 @@
 import time
 
-import pytest
+from inline_snapshot import snapshot
 
 from documator.domain import TimeoutSeconds
 from documator.execution import Command, execute_block
 
 
 def test_captures_stdout_in_a_plain_fence() -> None:
-    assert (
-        execute_block(Command("echo hello"), TimeoutSeconds(10)) == "```\nhello\n```\n"
-    )
+    output = execute_block(Command("echo hello"), TimeoutSeconds(10))
+
+    assert output.block == snapshot("""\
+```
+hello
+```
+""")
 
 
 def test_merges_stderr_into_stdout_in_write_order() -> None:
     output = execute_block(Command("echo a; echo b >&2; echo c"), TimeoutSeconds(10))
 
-    assert output == "```\na\nb\nc\n```\n"
+    assert output.block == snapshot("""\
+```
+a
+b
+c
+```
+""")
 
 
 def test_keeps_stderr_written_before_a_timeout() -> None:
     output = execute_block(Command("echo diagnosing >&2; sleep 5"), TimeoutSeconds(0.3))
 
-    assert "diagnosing" in output
+    assert output.block == snapshot("""\
+```
+diagnosing
+[documator: timed out after 0.3s]
+```
+""")
 
 
 def test_marks_a_non_zero_exit_and_keeps_its_output() -> None:
     output = execute_block(Command("echo partial; exit 3"), TimeoutSeconds(10))
 
-    assert "partial" in output
-    assert "exit 3" in output
+    assert output.block == snapshot("""\
+```
+partial
+[documator: exit 3]
+```
+""")
 
 
 def test_marks_a_timeout_differently_from_a_non_zero_exit() -> None:
     timed_out = execute_block(Command("sleep 5"), TimeoutSeconds(0.1))
     failed = execute_block(Command("false"), TimeoutSeconds(10))
 
-    assert "timed out" in timed_out
-    assert "timed out" not in failed
+    assert timed_out.block == snapshot("""\
+```
+[documator: timed out after 0.1s]
+```
+""")
+    assert failed.block == snapshot("""\
+```
+[documator: exit 1]
+```
+""")
+
+
+def test_reports_a_clean_run_as_unfailed() -> None:
+    assert execute_block(Command("echo hi"), TimeoutSeconds(10)).failure is None
+
+
+def test_reports_a_non_zero_exit_as_a_failure() -> None:
+    failure = execute_block(Command("exit 3"), TimeoutSeconds(10)).failure
+
+    assert failure == snapshot("exit 3")
+
+
+def test_reports_a_timeout_as_a_failure() -> None:
+    failure = execute_block(Command("sleep 5"), TimeoutSeconds(0.1)).failure
+
+    assert failure == snapshot("timed out after 0.1s")
+
+
+def test_output_forging_the_annotation_is_not_reported_as_a_failure() -> None:
+    forged = execute_block(Command("echo '[documator: exit 1]'"), TimeoutSeconds(10))
+
+    assert forged.failure is None
+
+
+# A snapshot would carry the zero-width spaces invisibly, so assert the absence that
+# is the whole point of the guard.
+def test_neutralizes_wiki_links_in_output() -> None:
+    output = execute_block(Command("echo '![[Note]] [[Other]]'"), TimeoutSeconds(10))
+
+    assert "[[" not in output.block
+    assert "]]" not in output.block
+    assert "Note" in output.block
+
+
+def test_neutralizes_tags_in_output() -> None:
+    output = execute_block(
+        Command("echo 'see #alpha and #beta/gamma'"), TimeoutSeconds(10)
+    )
+
+    assert "#alpha" not in output.block
+    assert "#beta" not in output.block
+    assert "alpha" in output.block
+
+
+def test_keeps_a_hash_that_cannot_start_a_tag() -> None:
+    output = execute_block(
+        Command("echo 'commit abc#1 and # heading'"), TimeoutSeconds(10)
+    )
+
+    assert output.block == snapshot("""\
+```
+commit abc#1 and # heading
+```
+""")
 
 
 def test_bounds_a_command_that_backgrounds_a_survivor() -> None:
@@ -50,26 +131,47 @@ def test_bounds_a_command_that_backgrounds_a_survivor() -> None:
 def test_does_not_leak_environment_between_invocations() -> None:
     execute_block(Command("export DOCUMATOR_LEAK=1"), TimeoutSeconds(10))
 
-    assert "1" not in execute_block(Command("echo $DOCUMATOR_LEAK"), TimeoutSeconds(10))
+    leaked = execute_block(Command("echo $DOCUMATOR_LEAK"), TimeoutSeconds(10))
+
+    assert leaked.block == snapshot("""\
+```
+```
+""")
 
 
 def test_does_not_leak_working_directory_between_invocations() -> None:
-    here = execute_block(Command("pwd"), TimeoutSeconds(10))
+    here = execute_block(Command("pwd"), TimeoutSeconds(10)).block
     execute_block(Command("cd /"), TimeoutSeconds(10))
 
-    assert execute_block(Command("pwd"), TimeoutSeconds(10)) == here
+    assert execute_block(Command("pwd"), TimeoutSeconds(10)).block == here
 
 
-@pytest.mark.parametrize(
-    ("command", "expected"),
-    [
-        ("printf 'a\\n```\\nb'", "````\na\n```\nb\n````\n"),
-        ("printf '````'", "`````\n````\n`````\n"),
-    ],
-)
-def test_lengthens_the_fence_past_backticks(command: str, expected: str) -> None:
-    assert execute_block(Command(command), TimeoutSeconds(10)) == expected
+def test_lengthens_the_fence_past_a_fence_in_the_output() -> None:
+    output = execute_block(Command("printf 'a\\n```\\nb'"), TimeoutSeconds(10))
+
+    assert output.block == snapshot("""\
+````
+a
+```
+b
+````
+""")
+
+
+def test_lengthens_the_fence_past_output_that_is_only_backticks() -> None:
+    output = execute_block(Command("printf '````'"), TimeoutSeconds(10))
+
+    assert output.block == snapshot("""\
+`````
+````
+`````
+""")
 
 
 def test_renders_empty_output_as_an_empty_fence() -> None:
-    assert execute_block(Command("true"), TimeoutSeconds(10)) == "```\n```\n"
+    output = execute_block(Command("true"), TimeoutSeconds(10))
+
+    assert output.block == snapshot("""\
+```
+```
+""")
