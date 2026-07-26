@@ -20,6 +20,8 @@ from documator.parsing import (
 
 RelativePath = NewType("RelativePath", Path)
 
+DEFAULT_TIMEOUT = TimeoutSeconds(10.0)
+
 log = logging.getLogger("documator")
 
 

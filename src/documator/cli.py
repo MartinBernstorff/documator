@@ -1,42 +1,27 @@
 import logging
 from collections.abc import Callable
-from pathlib import Path
 from typing import Annotated
 
 import typer
-from pydantic import RootModel, ValidationError
-
-# Typer vendors its own click, so the UsageError it raises is not the one `import
-# click` resolves to.
-from typer._click.exceptions import UsageError
+from pydantic import BaseModel, ValidationError
 
 from documator.domain import ExitCode, InputDir, OutputDir, TimeoutSeconds
+from documator.render import DEFAULT_TIMEOUT
 from documator.render import render as _render
+from documator.watch import watch as _watch
 
 app = typer.Typer(name="documator", add_completion=False)
 
 
-def _parsed[T: RootModel[Path]](model: type[T]) -> Callable[[str], T]:
+def _parsed[T: BaseModel](model: type[T]) -> Callable[[str], T]:
     def parse(raw: str) -> T:
         try:
-            return model(Path(raw))
+            return model.model_validate(raw)
         except ValidationError as error:
             reasons = "; ".join(problem["msg"] for problem in error.errors())
             raise typer.BadParameter(reasons) from error
 
     return parse
-
-
-def _parsed_timeout(raw: str) -> TimeoutSeconds:
-    try:
-        seconds = TimeoutSeconds(float(raw))
-    except ValueError as error:
-        raise typer.BadParameter(
-            f"timeout is not a number of seconds: {raw}"
-        ) from error
-    if seconds <= 0:
-        raise typer.BadParameter(f"timeout must be positive: {raw}")
-    return seconds
 
 
 @app.callback()
@@ -47,18 +32,24 @@ def root() -> None: ...
 def render(
     input_dir: Annotated[InputDir, typer.Argument(parser=_parsed(InputDir))],
     output_dir: Annotated[OutputDir, typer.Argument(parser=_parsed(OutputDir))],
+    watch: Annotated[bool, typer.Option("--watch")] = False,
     timeout: Annotated[
-        TimeoutSeconds, typer.Option(parser=_parsed_timeout)
-    ] = TimeoutSeconds(10.0),
+        TimeoutSeconds,
+        typer.Option("--timeout", metavar="SECONDS", parser=_parsed(TimeoutSeconds)),
+    ] = DEFAULT_TIMEOUT,
 ) -> None:
-    raise typer.Exit(_render(input_dir, output_dir, timeout))
+    run = _watch if watch else _render
+    raise typer.Exit(run(input_dir, output_dir, timeout))
 
 
 def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     command = typer.main.get_command(app)
+    # Standalone mode makes click print its own usage errors, but it exits rather
+    # than returning, so the code comes back as a SystemExit.
     try:
-        return command.main(args=argv, standalone_mode=False) or 0
-    except UsageError as error:
-        error.show()
-        return ExitCode(error.exit_code)
+        command.main(args=argv)
+    except SystemExit as exit_signal:
+        code = exit_signal.code
+        return ExitCode(code if isinstance(code, int) else 0)
+    return ExitCode(0)

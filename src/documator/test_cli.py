@@ -1,101 +1,188 @@
+import subprocess
+import sys
+import time
+from collections.abc import Callable
 from pathlib import Path
 
 from documator.cli import main
+from documator.tree_layout import TreeLayout, assert_tree, build_tree
+
+WATCH_DEADLINE_SECONDS = 15.0
+
+
+def _wait_for(
+    done: Callable[[], bool], nudge: Callable[[], None] = lambda: None
+) -> None:
+    deadline = time.monotonic() + WATCH_DEADLINE_SECONDS
+    while time.monotonic() < deadline:
+        nudge()
+        if done():
+            return
+        time.sleep(0.05)
+    raise AssertionError("the watching CLI never reached the expected state")
 
 
 def test_render_with_valid_args_exits_zero(tmp_path: Path) -> None:
-    input_dir = tmp_path / "in"
-    input_dir.mkdir()
-    output_dir = tmp_path / "out"
-    output_dir.mkdir()
-    assert main(["render", str(input_dir), str(output_dir)]) == 0
+    build_tree(tmp_path, TreeLayout("in\nout"))
+
+    assert main(["render", str(tmp_path / "in"), str(tmp_path / "out")]) == 0
 
 
 def test_render_with_missing_input_dir_exits_two(tmp_path: Path) -> None:
-    output_dir = tmp_path / "out"
-    output_dir.mkdir()
-    assert main(["render", str(tmp_path / "nope"), str(output_dir)]) == 2
+    build_tree(tmp_path, TreeLayout("out"))
+
+    assert main(["render", str(tmp_path / "nope"), str(tmp_path / "out")]) == 2
 
 
 def test_render_with_missing_output_dir_exits_two(tmp_path: Path) -> None:
-    input_dir = tmp_path / "in"
-    input_dir.mkdir()
-    assert main(["render", str(input_dir), str(tmp_path / "nope")]) == 2
+    build_tree(tmp_path, TreeLayout("in"))
+
+    assert main(["render", str(tmp_path / "in"), str(tmp_path / "nope")]) == 2
 
 
 def test_render_mirrors_the_input_tree(tmp_path: Path) -> None:
-    input_dir = tmp_path / "in"
-    input_dir.mkdir()
-    (input_dir / "note.md").write_text("# Note\n")
-    output_dir = tmp_path / "out"
-    output_dir.mkdir()
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              note.md | # Note\\n
+            out
+        """),
+    )
 
-    assert main(["render", str(input_dir), str(output_dir)]) == 0
-    assert (output_dir / "note.md").read_text() == "# Note\n"
+    assert main(["render", str(tmp_path / "in"), str(tmp_path / "out")]) == 0
+
+    assert_tree(tmp_path / "out", TreeLayout("note.md | # Note\\n"))
 
 
 def test_render_with_a_failing_block_exits_one(tmp_path: Path) -> None:
-    input_dir = tmp_path / "in"
-    input_dir.mkdir()
-    (input_dir / "note.md").write_text("```\n!exit 3\n```\n")
-    output_dir = tmp_path / "out"
-    output_dir.mkdir()
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              note.md | ```\\n!exit 3\\n```\\n
+            out
+        """),
+    )
 
-    assert main(["render", str(input_dir), str(output_dir)]) == 1
+    assert main(["render", str(tmp_path / "in"), str(tmp_path / "out")]) == 1
 
 
 def test_timeout_flag_bounds_a_block(tmp_path: Path) -> None:
-    input_dir = tmp_path / "in"
-    input_dir.mkdir()
-    (input_dir / "note.md").write_text("```\n!sleep 5\n```\n")
-    output_dir = tmp_path / "out"
-    output_dir.mkdir()
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              note.md | ```\\n!sleep 5\\n```\\n
+            out
+        """),
+    )
 
-    assert main(["render", str(input_dir), str(output_dir), "--timeout", "0.3"]) == 1
-    assert "timed out after 0.3s" in (output_dir / "note.md").read_text()
+    args = ["render", str(tmp_path / "in"), str(tmp_path / "out"), "--timeout", "0.3"]
+    assert main(args) == 1
+
+    assert_tree(
+        tmp_path / "out",
+        TreeLayout("note.md | ```\\n[documator: timed out after 0.3s]\\n```\\n"),
+    )
 
 
 def test_default_timeout_lets_a_short_command_finish(tmp_path: Path) -> None:
-    input_dir = tmp_path / "in"
-    input_dir.mkdir()
-    (input_dir / "note.md").write_text("```\n!sleep 0.5; echo done\n```\n")
-    output_dir = tmp_path / "out"
-    output_dir.mkdir()
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              note.md | ```\\n!sleep 0.5; echo done\\n```\\n
+            out
+        """),
+    )
 
-    assert main(["render", str(input_dir), str(output_dir)]) == 0
-    assert (output_dir / "note.md").read_text() == "```\ndone\n```\n"
+    assert main(["render", str(tmp_path / "in"), str(tmp_path / "out")]) == 0
 
-
-def test_render_with_a_non_numeric_timeout_exits_two(tmp_path: Path) -> None:
-    input_dir = tmp_path / "in"
-    input_dir.mkdir()
-    output_dir = tmp_path / "out"
-    output_dir.mkdir()
-
-    assert main(["render", str(input_dir), str(output_dir), "--timeout", "soon"]) == 2
-
-
-def test_render_with_an_unknown_option_exits_two(tmp_path: Path) -> None:
-    input_dir = tmp_path / "in"
-    input_dir.mkdir()
-    output_dir = tmp_path / "out"
-    output_dir.mkdir()
-
-    assert main(["render", str(input_dir), str(output_dir), "--timeut", "5"]) == 2
-
-
-def test_render_with_a_non_positive_timeout_exits_two(tmp_path: Path) -> None:
-    input_dir = tmp_path / "in"
-    input_dir.mkdir()
-    output_dir = tmp_path / "out"
-    output_dir.mkdir()
-
-    assert main(["render", str(input_dir), str(output_dir), "--timeout", "0"]) == 2
+    assert_tree(tmp_path / "out", TreeLayout("note.md | ```\\ndone\\n```\\n"))
 
 
 def test_render_into_nested_output_exits_two(tmp_path: Path) -> None:
-    input_dir = tmp_path / "in"
-    nested_output = input_dir / "out"
-    nested_output.mkdir(parents=True)
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              out
+        """),
+    )
 
-    assert main(["render", str(input_dir), str(nested_output)]) == 2
+    assert main(["render", str(tmp_path / "in"), str(tmp_path / "in" / "out")]) == 2
+
+
+def test_render_accepts_an_explicit_timeout(tmp_path: Path) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              note.md | # Note\\n
+            out
+        """),
+    )
+
+    args = ["render", str(tmp_path / "in"), str(tmp_path / "out"), "--timeout", "2.5"]
+    assert main(args) == 0
+
+    assert_tree(tmp_path / "out", TreeLayout("note.md | # Note\\n"))
+
+
+def test_non_numeric_timeout_exits_two(tmp_path: Path) -> None:
+    build_tree(tmp_path, TreeLayout("in\nout"))
+
+    args = ["render", str(tmp_path / "in"), str(tmp_path / "out"), "--timeout", "soon"]
+    assert main(args) == 2
+
+
+def test_non_positive_timeout_exits_two(tmp_path: Path) -> None:
+    build_tree(tmp_path, TreeLayout("in\nout"))
+
+    args = ["render", str(tmp_path / "in"), str(tmp_path / "out"), "--timeout", "0"]
+    assert main(args) == 2
+
+
+def test_unknown_flag_exits_two(tmp_path: Path) -> None:
+    build_tree(tmp_path, TreeLayout("in\nout"))
+
+    args = ["render", str(tmp_path / "in"), str(tmp_path / "out"), "--parallel"]
+    assert main(args) == 2
+
+
+def test_watch_flag_keeps_rendering_after_the_first_pass(tmp_path: Path) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              note.md | original\\n
+            out
+        """),
+    )
+    rendered = tmp_path / "out" / "note.md"
+
+    def edit() -> None:
+        (tmp_path / "in" / "note.md").write_text("edited\n")
+
+    # --watch never returns, so drive the real CLI out-of-process and kill it.
+    process = subprocess.Popen(
+        [
+            sys.executable,
+            "-m",
+            "documator",
+            "render",
+            str(tmp_path / "in"),
+            str(tmp_path / "out"),
+            "--watch",
+        ]
+    )
+
+    try:
+        # The first pass runs before the watcher arms, so wait it out before editing;
+        # only a re-render can turn the output into "edited" afterwards.
+        _wait_for(lambda: rendered.is_file() and rendered.read_text() == "original\n")
+        _wait_for(lambda: rendered.read_text() == "edited\n", edit)
+    finally:
+        process.terminate()
+        process.wait(timeout=WATCH_DEADLINE_SECONDS)
