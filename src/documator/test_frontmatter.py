@@ -80,6 +80,23 @@ body
 """)
 
 
+def test_a_declared_name_never_displaces_the_stem() -> None:
+    composed = compose(
+        SkillName("code-review"),
+        (DeclaredLine("name: something-else"), DeclaredLine("model: opus")),
+        Markdown("body\n"),
+    )
+
+    assert composed == snapshot("""\
+---
+name: code-review
+description: code-review
+model: opus
+---
+body
+""")
+
+
 def test_declared_keys_pass_through_verbatim() -> None:
     composed = compose(
         SkillName("deploy"),

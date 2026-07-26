@@ -33,16 +33,21 @@ def split(source: Markdown) -> Template:
 def compose(
     name: SkillName, declared: tuple[DeclaredLine, ...], body: Markdown
 ) -> Markdown:
-    described = (
-        declared
-        if Arr(declared).any(_opens_description)
-        else (DeclaredLine(f"description: {name}"), *declared)
+    # A declared name would land second in the block and win under YAML's last-key rule,
+    # so it is dropped rather than passed through: the stem is the name, always.
+    passed_through = (
+        Arr(declared).filter(lambda line: not _opens(line, "name")).to_list()
     )
-    lines = Arr((DeclaredLine(f"name: {name}"), *described)).map(
+    described = (
+        passed_through
+        if Arr(passed_through).any(lambda line: _opens(line, "description"))
+        else [DeclaredLine(f"description: {name}"), *passed_through]
+    )
+    lines = Arr([DeclaredLine(f"name: {name}"), *described]).map(
         lambda line: line + "\n"
     )
     return Markdown(f"---\n{''.join(lines)}---\n{body}")
 
 
-def _opens_description(line: DeclaredLine) -> bool:
-    return re.match(r"description[ \t]*:", line) is not None
+def _opens(line: DeclaredLine, key: str) -> bool:
+    return re.match(rf"{key}[ \t]*:", line) is not None
