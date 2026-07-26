@@ -9,7 +9,7 @@ import pytest
 
 from documator.domain import ExitCode, InputDir, OutputDir
 from documator.render import DEFAULT_TIMEOUT
-from documator.tree_layout import TreeLayout, build_tree
+from documator.tree_layout import TreeLayout, assert_tree, build_tree
 from documator.watch import watch
 
 POLL_SECONDS = 0.05
@@ -46,14 +46,14 @@ class Watcher:
 
 
 @contextmanager
-def _watching(
-    input_dir: InputDir, output_dir: OutputDir, settled: Callable[[], bool]
-) -> Generator[Watcher]:
+def _watching(input_dir: InputDir, output_dir: OutputDir) -> Generator[Watcher]:
     watcher = Watcher(input_dir, output_dir)
     try:
         # Yield only once the initial render has landed, so anything a test observes
         # afterwards can only have come from a re-render.
-        watcher.wait_until(settled, lambda _nudge: None)
+        watcher.wait_until(
+            _holds(output_dir.root / "note.md", "original\n"), lambda _nudge: None
+        )
         yield watcher
     finally:
         watcher.stop()
@@ -81,12 +81,10 @@ def test_watch_mirrors_a_changed_note_into_the_output(tmp_path: Path) -> None:
     )
     input_dir, output_dir = InputDir(tmp_path / "in"), OutputDir(tmp_path / "out")
 
-    with _watching(
-        input_dir, output_dir, _holds(tmp_path / "out" / "note.md", "original\n")
-    ) as watcher:
+    with _watching(input_dir, output_dir) as watcher:
         watcher.wait_until(
-            _holds(tmp_path / "out" / "note.md", "edited\n"),
-            _rewrite(tmp_path / "in" / "note.md", "edited\n"),
+            _holds(output_dir.root / "note.md", "edited\n"),
+            _rewrite(input_dir.root / "note.md", "edited\n"),
         )
 
 
@@ -104,12 +102,10 @@ def test_watch_mirrors_a_changed_non_markdown_file(
     )
     input_dir, output_dir = InputDir(tmp_path / "in"), OutputDir(tmp_path / "out")
 
-    with _watching(
-        input_dir, output_dir, _holds(tmp_path / "out" / "note.md", "original\n")
-    ) as watcher:
+    with _watching(input_dir, output_dir) as watcher:
         watcher.wait_until(
-            _holds(tmp_path / "out" / filename, "payload\n"),
-            _rewrite(tmp_path / "in" / filename, "payload\n"),
+            _holds(output_dir.root / filename, "payload\n"),
+            _rewrite(input_dir.root / filename, "payload\n"),
         )
 
 
@@ -126,7 +122,7 @@ def test_watch_debounces_a_burst_of_saves(
         """),
     )
     input_dir, output_dir = InputDir(tmp_path / "in"), OutputDir(tmp_path / "out")
-    note = tmp_path / "in" / "note.md"
+    note = input_dir.root / "note.md"
 
     def re_renders() -> int:
         return sum("Re-rendering" in record.message for record in caplog.records)
@@ -135,9 +131,7 @@ def test_watch_debounces_a_burst_of_saves(
         for write in range(20):
             note.write_text(f"change {nudge}.{write}\n")
 
-    with _watching(
-        input_dir, output_dir, _holds(tmp_path / "out" / "note.md", "original\n")
-    ) as watcher:
+    with _watching(input_dir, output_dir) as watcher:
         watcher.wait_until(lambda: re_renders() >= 1, burst)
 
     # 20 writes inside one ~300 ms window must not each earn their own render.
@@ -157,7 +151,7 @@ def test_watch_keeps_going_after_a_render_fails(
         """),
     )
     input_dir, output_dir = InputDir(tmp_path / "in"), OutputDir(tmp_path / "out")
-    unreadable = tmp_path / "in" / "locked.md"
+    unreadable = input_dir.root / "locked.md"
 
     def render_failed() -> bool:
         return any("Render failed" in record.message for record in caplog.records)
@@ -167,20 +161,18 @@ def test_watch_keeps_going_after_a_render_fails(
             unreadable.write_text("secret\n")
             unreadable.chmod(0o000)
         # Keep the change stream alive in case the watcher had not armed yet.
-        (tmp_path / "in" / "note.md").write_text(f"change {nudge}\n")
+        (input_dir.root / "note.md").write_text(f"change {nudge}\n")
 
     def unlock_and_add(_nudge: int) -> None:
         if unreadable.exists():
             unreadable.chmod(0o600)
             unreadable.unlink()
-        (tmp_path / "in" / "after.md").write_text("recovered\n")
+        (input_dir.root / "after.md").write_text("recovered\n")
 
-    with _watching(
-        input_dir, output_dir, _holds(tmp_path / "out" / "note.md", "original\n")
-    ) as watcher:
+    with _watching(input_dir, output_dir) as watcher:
         watcher.wait_until(render_failed, lock)
         watcher.wait_until(
-            _holds(tmp_path / "out" / "after.md", "recovered\n"), unlock_and_add
+            _holds(output_dir.root / "after.md", "recovered\n"), unlock_and_add
         )
 
 
@@ -201,7 +193,7 @@ def test_watch_renders_once_before_any_change(tmp_path: Path) -> None:
     )
 
     assert exit_code == 0
-    assert (tmp_path / "out" / "note.md").read_text() == "original\n"
+    assert_tree(tmp_path / "out", TreeLayout("note.md | original\\n"))
 
 
 def test_watch_returns_the_renders_exit_code(tmp_path: Path) -> None:

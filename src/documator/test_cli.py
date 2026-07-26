@@ -77,18 +77,8 @@ def test_render_accepts_an_explicit_timeout(tmp_path: Path) -> None:
         """),
     )
 
-    assert (
-        main(
-            [
-                "render",
-                str(tmp_path / "in"),
-                str(tmp_path / "out"),
-                "--timeout",
-                "2.5",
-            ]
-        )
-        == 0
-    )
+    args = ["render", str(tmp_path / "in"), str(tmp_path / "out"), "--timeout", "2.5"]
+    assert main(args) == 0
 
     assert_tree(tmp_path / "out", TreeLayout("note.md | # Note\\n"))
 
