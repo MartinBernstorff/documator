@@ -196,7 +196,7 @@ def test_watch_renders_once_before_any_change(tmp_path: Path) -> None:
     assert_tree(tmp_path / "out", TreeLayout("note.md | original\\n"))
 
 
-def test_watch_returns_the_renders_exit_code(tmp_path: Path) -> None:
+def test_a_directory_conflict_exits_two_without_watching(tmp_path: Path) -> None:
     build_tree(
         tmp_path,
         TreeLayout("""
@@ -204,16 +204,36 @@ def test_watch_returns_the_renders_exit_code(tmp_path: Path) -> None:
               out
         """),
     )
+    nested = tmp_path / "in" / "out"
+
+    # No stop_event: reaching the watch loop at all would hang the test.
+    assert watch(InputDir(nested.parent), OutputDir(nested), DEFAULT_TIMEOUT) == 2
+
+
+def test_a_failing_block_does_not_taint_a_clean_shutdown(tmp_path: Path) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              note.md | ```\\n!echo partial; exit 3\\n```\\n
+            out
+        """),
+    )
     stopped = Event()
     stopped.set()
 
-    nested = tmp_path / "in" / "out"
-    assert (
-        watch(InputDir(nested.parent), OutputDir(nested), DEFAULT_TIMEOUT, stopped) == 2
+    exit_code = watch(
+        InputDir(tmp_path / "in"), OutputDir(tmp_path / "out"), DEFAULT_TIMEOUT, stopped
     )
 
+    assert exit_code == 0
+    assert "[documator: exit 3]" in (tmp_path / "out" / "note.md").read_text()
 
-def test_a_render_that_raises_reports_an_operational_error(tmp_path: Path) -> None:
+
+def test_a_render_that_raises_is_logged_but_shuts_down_cleanly(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    caplog.set_level(logging.ERROR, logger="documator.watch")
     build_tree(
         tmp_path,
         TreeLayout("""
@@ -235,6 +255,8 @@ def test_a_render_that_raises_reports_an_operational_error(tmp_path: Path) -> No
             DEFAULT_TIMEOUT,
             stopped,
         )
-        assert exit_code == 2
     finally:
         unreadable.chmod(0o600)
+
+    assert exit_code == 0
+    assert any("Render failed" in record.message for record in caplog.records)
