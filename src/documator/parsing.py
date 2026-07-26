@@ -1,6 +1,5 @@
 import re
 from dataclasses import dataclass
-from enum import StrEnum
 from typing import NewType
 
 from documator.execution import Command
@@ -15,10 +14,23 @@ _BANG = "!"
 _ESCAPED_BANG = "!!"
 
 
-class StructuralError(StrEnum):
-    MULTIPLE_COMMANDS = "more than one command line in a single block"
-    COMMAND_WITH_OTHER_CONTENT = "a command line alongside other content"
-    UNTERMINATED_FENCE = "fenced block is never closed"
+class StructuralError(ValueError):
+    message: str
+
+    def __init__(self) -> None:
+        super().__init__(self.message)
+
+
+class MultipleCommands(StructuralError):
+    message = "more than one command line in a single block"
+
+
+class CommandWithOtherContent(StructuralError):
+    message = "a command line alongside other content"
+
+
+class UnterminatedFence(StructuralError):
+    message = "fenced block is never closed"
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,7 +46,7 @@ class ExecutableBlock:
 @dataclass(frozen=True, slots=True)
 class StructuralErrorBlock:
     text: Markdown
-    reason: StructuralError
+    reason: type[StructuralError]
 
 
 type Block = PassthroughBlock | ExecutableBlock | StructuralErrorBlock
@@ -58,7 +70,7 @@ def parse(source: Markdown) -> list[Block]:
         end = LineIndex(len(lines)) if close is None else close
         fence = lines[index:end]
         blocks.append(
-            _structural_error(fence, StructuralError.UNTERMINATED_FENCE)
+            _structural_error(fence, UnterminatedFence)
             if close is None
             else _classify(fence)
         )
@@ -87,14 +99,14 @@ def _classify(fence: list[Line]) -> Block:
             _joined([fence[0], *map(_unescape, content), fence[-1]])
         )
     if len(commands) > 1:
-        return _structural_error(fence, StructuralError.MULTIPLE_COMMANDS)
+        return _structural_error(fence, MultipleCommands)
     if len([line for line in content if line.strip()]) > 1:
-        return _structural_error(fence, StructuralError.COMMAND_WITH_OTHER_CONTENT)
+        return _structural_error(fence, CommandWithOtherContent)
     return ExecutableBlock(Command(commands[0].removeprefix(_BANG).strip()))
 
 
 def _structural_error(
-    fence: list[Line], reason: StructuralError
+    fence: list[Line], reason: type[StructuralError]
 ) -> StructuralErrorBlock:
     return StructuralErrorBlock(_joined(fence), reason)
 

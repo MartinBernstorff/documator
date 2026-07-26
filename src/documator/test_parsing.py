@@ -1,10 +1,12 @@
 from documator.execution import Command
 from documator.parsing import (
+    CommandWithOtherContent,
     ExecutableBlock,
     Markdown,
+    MultipleCommands,
     PassthroughBlock,
-    StructuralError,
     StructuralErrorBlock,
+    UnterminatedFence,
     parse,
 )
 
@@ -61,9 +63,7 @@ def test_only_a_fence_at_column_zero_is_top_level() -> None:
 def test_escaped_bang_alongside_a_command_is_a_structural_error() -> None:
     source = Markdown("```\n!echo hi\n!!echo literal\n```\n")
     assert parse(source) == [
-        StructuralErrorBlock(
-            Markdown(source), StructuralError.COMMAND_WITH_OTHER_CONTENT
-        )
+        StructuralErrorBlock(Markdown(source), CommandWithOtherContent)
     ]
 
 
@@ -74,25 +74,19 @@ def test_shorter_fence_does_not_close_a_longer_one() -> None:
 
 def test_two_command_lines_are_a_structural_error() -> None:
     source = Markdown("```\n!echo one\n!echo two\n```\n")
-    assert parse(source) == [
-        StructuralErrorBlock(Markdown(source), StructuralError.MULTIPLE_COMMANDS)
-    ]
+    assert parse(source) == [StructuralErrorBlock(Markdown(source), MultipleCommands)]
 
 
 def test_command_mixed_with_other_content_is_a_structural_error() -> None:
     source = Markdown("```\n!echo hi\nprint('hi')\n```\n")
     assert parse(source) == [
-        StructuralErrorBlock(
-            Markdown(source), StructuralError.COMMAND_WITH_OTHER_CONTENT
-        )
+        StructuralErrorBlock(Markdown(source), CommandWithOtherContent)
     ]
 
 
 def test_unterminated_fence_is_a_structural_error() -> None:
     source = Markdown("```\n!echo hi\n")
-    assert parse(source) == [
-        StructuralErrorBlock(Markdown(source), StructuralError.UNTERMINATED_FENCE)
-    ]
+    assert parse(source) == [StructuralErrorBlock(Markdown(source), UnterminatedFence)]
 
 
 def test_multiple_executable_blocks_are_classified_independently() -> None:
