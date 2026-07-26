@@ -8,3 +8,7 @@ def test_render_with_valid_args_exits_zero(tmp_path: Path) -> None:
     input_dir.mkdir()
     output_dir = tmp_path / "out"
     assert main(["render", str(input_dir), str(output_dir)]) == 0
+
+
+def test_render_with_missing_input_dir_exits_two(tmp_path: Path) -> None:
+    assert main(["render", str(tmp_path / "nope"), str(tmp_path / "out")]) == 2

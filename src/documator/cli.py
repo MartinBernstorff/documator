@@ -1,8 +1,9 @@
 from pathlib import Path
 
 import typer
+from pydantic import ValidationError
 
-from documator.domain import InputDir, OutputDir
+from documator.domain import OPERATIONAL_ERROR, InputDir, OutputDir
 from documator.render import DEFAULT_TIMEOUT
 from documator.render import render as _render
 
@@ -15,8 +16,12 @@ def root() -> None: ...
 
 @app.command()
 def render(input_dir: Path, output_dir: Path) -> None:
-    code = _render(InputDir(input_dir), OutputDir(output_dir), DEFAULT_TIMEOUT)
-    raise typer.Exit(code)
+    try:
+        source, destination = InputDir(input_dir), OutputDir(output_dir)
+    except ValidationError as error:
+        typer.echo(str(error), err=True)
+        raise typer.Exit(OPERATIONAL_ERROR) from error
+    raise typer.Exit(_render(source, destination, DEFAULT_TIMEOUT))
 
 
 def main(argv: list[str] | None = None) -> int:
