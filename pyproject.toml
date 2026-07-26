@@ -1,0 +1,45 @@
+[project]
+name = "documator"
+version = "0.1.0"
+description = "A documentation tool"
+readme = "README.md"
+authors = [
+    { name = "Martin Bernstorff", email = "martinbernstorff@gmail.com" }
+]
+requires-python = ">=3.14"
+dependencies = [
+    "typer>=0.27.0",
+]
+
+[project.scripts]
+documator = "documator.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.9.24,<0.10.0"]
+build-backend = "uv_build"
+
+[tool.ruff]
+target-version = "py314"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.pyrefly]
+project-includes = ["src"]
+preset = "all"
+
+[tool.pytest.ini_options]
+testpaths = ["src"]
+python_files = ["test_*.py"]
+addopts = "-ra -n auto --testmon"
+
+[dependency-groups]
+dev = [
+    "pyrefly>=1.1.1",
+    "pytest>=9.1.1",
+    "pytest-randomly>=4.1.0",
+    "pytest-testmon>=2.2.0",
+    "pytest-xdist>=3.8.0",
+    "ruff>=0.16.0",
+    "tach>=0.35.0",
+]

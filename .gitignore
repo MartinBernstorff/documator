@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+dist/
+build/
+
+# Tooling caches
+.moon/cache/
+.ruff_cache/
+.pytest_cache/
+.pyrefly_cache/
+.testmondata*
