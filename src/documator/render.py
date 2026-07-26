@@ -9,6 +9,8 @@ from documator.domain import ExitCode, InputDir, OutputDir, TimeoutSeconds
 
 RelativePath = NewType("RelativePath", Path)
 
+DEFAULT_TIMEOUT = TimeoutSeconds(10.0)
+
 log = logging.getLogger("documator")
 
 
