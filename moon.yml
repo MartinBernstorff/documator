@@ -21,6 +21,16 @@ tasks:
       - '@group(sources)'
       - '@group(tests)'
 
+  # xdist makes inline-snapshot self-disable, so recording needs a single process;
+  # testmon would deselect the very tests whose snapshots are missing. Rewrites test
+  # sources, so it is type 'run' to stay out of `moon check` and `moon ci`.
+  snapshot:
+    type: 'run'
+    script: 'uv run pytest -n0 --testmon-noselect --inline-snapshot=create,fix'
+    options:
+      cache: false
+      runInCI: false
+
   lint:
     script: 'uv run ruff check'
     inputs:

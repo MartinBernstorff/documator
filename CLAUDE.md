@@ -15,8 +15,11 @@ Always run tasks through **moon**, never the tool directly. This runs dependenci
 | Format | `moon run documator:format` | ruff (`--check`) |
 | Type-check | `moon run documator:typecheck` | pyrefly (`preset = all`) |
 | Modularity | `moon run documator:modularity` | tach |
+| Record snapshots | `moon run documator:snapshot` | pytest + inline-snapshot |
 
 Run everything at once with `moon check --all`, or `moon ci --base main` for the full affected-only CI pass.
+
+`snapshot` sits outside both, because it **rewrites test sources**. Run it by hand when a `snapshot()` is empty or its expected value changed, then read the diff before committing. It exits non-zero whenever it writes a value.
 
 ## Conventions
 
@@ -43,3 +46,4 @@ Run everything at once with `moon check --all`, or `moon ci --base main` for the
 - Test against the real implementation unless it is too slow or has real-world consequences.
 - Avoid spies and mocks. When you must substitute, use a fake — typically a fast in-memory implementation.
 - If a fake can drift from the real implementation, add a contract test that runs both against the same expectations.
+- Assert expected output with `inline_snapshot.snapshot(...)` rather than a hand-written literal, and record it with `moon run documator:snapshot`. Prefer one whole-value snapshot over several substring assertions. Do not snapshot a value whose point is that something is *absent*, or one carrying invisible characters — assert that directly instead.
