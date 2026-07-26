@@ -73,6 +73,7 @@ name = "documator"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "iterpy" },
     { name = "pydantic" },
     { name = "typer" },
 ]
@@ -91,6 +92,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "iterpy", specifier = ">=1.14.0" },
     { name = "pydantic", specifier = ">=2.13.4" },
     { name = "typer", specifier = ">=0.27.0" },
 ]
@@ -147,6 +149,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/72/34/14ca021ce8e5dfedc35312d08ba8bf51fdd999c576889fc2c24cb97f4f10/iniconfig-2.3.0.tar.gz", hash = "sha256:c76315c77db068650d49c5b56314774a7804df16fee4402c1f19d6d15d8c4730", size = 20503, upload-time = "2025-10-18T21:55:43.219Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/cb/b1/3846dd7f199d53cb17f49cba7e651e9ce294d8497c8c150530ed11865bb8/iniconfig-2.3.0-py3-none-any.whl", hash = "sha256:f631c04d2c48c52b84d0d0549c99ff3859c98df65b3101406327ecc7d53fbf12", size = 7484, upload-time = "2025-10-18T21:55:41.639Z" },
+]
+
+[[package]]
+name = "iterpy"
+version = "1.14.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/03/f8/8fc1ef1de3bb64b26983f0deb5a99c90a40e45e76684760daf6f13e1e811/iterpy-1.14.0.tar.gz", hash = "sha256:22bdda576a045cbe7897168d4c0bd519ea29e1ea44310a5427068825b1043a66", size = 108647, upload-time = "2026-01-09T12:04:36.67Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/2d/2a/95c1f2c50410c5f25c8eb77afac50de30068f12f28e5ef2b5942f023b137/iterpy-1.14.0-py3-none-any.whl", hash = "sha256:4689c90c24230cd3ac89e060234173d267aa0ff3ba397043b8f6463f0e897609", size = 12318, upload-time = "2026-01-09T12:04:35.262Z" },
 ]
 
 [[package]]

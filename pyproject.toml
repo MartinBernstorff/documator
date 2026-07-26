@@ -8,6 +8,7 @@ authors = [
 ]
 requires-python = ">=3.14"
 dependencies = [
+    "iterpy>=1.14.0",
     "pydantic>=2.13.4",
     "typer>=0.27.0",
 ]
@@ -18,21 +19,6 @@ documator = "documator.cli:main"
 [build-system]
 requires = ["uv_build>=0.9.24,<0.10.0"]
 build-backend = "uv_build"
-
-[tool.ruff]
-target-version = "py314"
-
-[tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "SIM"]
-
-[tool.pyrefly]
-project-includes = ["src"]
-preset = "all"
-
-[tool.pytest.ini_options]
-testpaths = ["src"]
-python_files = ["test_*.py"]
-addopts = "-ra -n auto --testmon"
 
 [dependency-groups]
 dev = [
