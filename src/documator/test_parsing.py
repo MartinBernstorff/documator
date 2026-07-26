@@ -12,27 +12,46 @@ from documator.parsing import (
 
 
 def test_prose_only_document_is_a_single_passthrough_block() -> None:
-    source = Markdown("# Title\n\nSome prose.\n")
+    source = Markdown("""# Title
+
+Some prose.
+""")
     assert parse(source) == [PassthroughBlock(Markdown(source))]
 
 
 def test_fence_with_single_bang_line_is_executable() -> None:
-    source = Markdown("```\n!echo hi\n```\n")
+    source = Markdown("""```
+!echo hi
+```
+""")
     assert parse(source) == [ExecutableBlock(Command("echo hi"))]
 
 
 def test_info_string_does_not_prevent_execution() -> None:
-    source = Markdown("```sh\n!echo hi\n```\n")
+    source = Markdown("""```sh
+!echo hi
+```
+""")
     assert parse(source) == [ExecutableBlock(Command("echo hi"))]
 
 
 def test_tilde_fence_is_executable() -> None:
-    source = Markdown("~~~\n!echo hi\n~~~\n")
+    source = Markdown("""~~~
+!echo hi
+~~~
+""")
     assert parse(source) == [ExecutableBlock(Command("echo hi"))]
 
 
 def test_surrounding_prose_is_preserved_around_an_executable_block() -> None:
-    source = Markdown("before\n\n```\n!echo hi\n```\n\nafter\n")
+    source = Markdown("""before
+
+```
+!echo hi
+```
+
+after
+""")
     assert parse(source) == [
         PassthroughBlock(Markdown("before\n\n")),
         ExecutableBlock(Command("echo hi")),
@@ -41,56 +60,103 @@ def test_surrounding_prose_is_preserved_around_an_executable_block() -> None:
 
 
 def test_blank_lines_inside_an_executable_fence_are_tolerated() -> None:
-    source = Markdown("```\n\n!echo hi\n\n```\n")
+    source = Markdown("""```
+
+!echo hi
+
+```
+""")
     assert parse(source) == [ExecutableBlock(Command("echo hi"))]
 
 
 def test_double_bang_escapes_to_a_literal_bang_and_does_not_execute() -> None:
-    source = Markdown("```\n!!echo hi\n```\n")
-    assert parse(source) == [PassthroughBlock(Markdown("```\n!echo hi\n```\n"))]
+    source = Markdown("""```
+!!echo hi
+```
+""")
+    assert parse(source) == [
+        PassthroughBlock(
+            Markdown("""```
+!echo hi
+```
+""")
+        )
+    ]
 
 
 def test_non_executable_fence_passes_through_unchanged() -> None:
-    source = Markdown("```python\nprint('hi')\n```\n")
+    source = Markdown("""```python
+print('hi')
+```
+""")
     assert parse(source) == [PassthroughBlock(Markdown(source))]
 
 
 def test_only_a_fence_at_column_zero_is_top_level() -> None:
-    source = Markdown("    ```\n    !echo hi\n    ```\n")
+    source = Markdown("""    ```
+    !echo hi
+    ```
+""")
     assert parse(source) == [PassthroughBlock(Markdown(source))]
 
 
 def test_escaped_bang_alongside_a_command_is_a_structural_error() -> None:
-    source = Markdown("```\n!echo hi\n!!echo literal\n```\n")
+    source = Markdown("""```
+!echo hi
+!!echo literal
+```
+""")
     assert parse(source) == [
         StructuralErrorBlock(Markdown(source), CommandWithOtherContent)
     ]
 
 
 def test_shorter_fence_does_not_close_a_longer_one() -> None:
-    source = Markdown("````\n```\nprint('hi')\n```\n````\n")
+    source = Markdown("""````
+```
+print('hi')
+```
+````
+""")
     assert parse(source) == [PassthroughBlock(Markdown(source))]
 
 
 def test_two_command_lines_are_a_structural_error() -> None:
-    source = Markdown("```\n!echo one\n!echo two\n```\n")
+    source = Markdown("""```
+!echo one
+!echo two
+```
+""")
     assert parse(source) == [StructuralErrorBlock(Markdown(source), MultipleCommands)]
 
 
 def test_command_mixed_with_other_content_is_a_structural_error() -> None:
-    source = Markdown("```\n!echo hi\nprint('hi')\n```\n")
+    source = Markdown("""```
+!echo hi
+print('hi')
+```
+""")
     assert parse(source) == [
         StructuralErrorBlock(Markdown(source), CommandWithOtherContent)
     ]
 
 
 def test_unterminated_fence_is_a_structural_error() -> None:
-    source = Markdown("```\n!echo hi\n")
+    source = Markdown("""```
+!echo hi
+""")
     assert parse(source) == [StructuralErrorBlock(Markdown(source), UnterminatedFence)]
 
 
 def test_multiple_executable_blocks_are_classified_independently() -> None:
-    source = Markdown("```\n!echo one\n```\ntext\n```\n!echo two\n```\n")
+    source = Markdown("""```
+!echo one
+```
+text
+```
+!echo two
+```
+""")
     assert parse(source) == [
         ExecutableBlock(Command("echo one")),
         PassthroughBlock(Markdown("text\n")),
