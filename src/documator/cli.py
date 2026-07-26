@@ -1,25 +1,22 @@
-from importlib.metadata import version as _version
+from pathlib import Path
 
 import typer
 
-app = typer.Typer(name="documator")
+from documator.domain import InputDir, OutputDir
+from documator.render import DEFAULT_TIMEOUT
+from documator.render import render as _render
+
+app = typer.Typer(name="documator", add_completion=False)
 
 
-def _version_callback(show: bool) -> None:
-    if show:
-        typer.echo(f"documator {_version('documator')}")
-        raise typer.Exit
+@app.callback()
+def root() -> None: ...
 
 
-@app.callback(invoke_without_command=True)
-def root(
-    ctx: typer.Context,
-    show_version: bool = typer.Option(
-        False, "--version", callback=_version_callback, is_eager=True
-    ),
-) -> None:
-    if ctx.invoked_subcommand is None:
-        typer.echo("Hello from documator!")
+@app.command()
+def render(input_dir: Path, output_dir: Path) -> None:
+    code = _render(InputDir(input_dir), OutputDir(output_dir), DEFAULT_TIMEOUT)
+    raise typer.Exit(code)
 
 
 def main(argv: list[str] | None = None) -> int:
