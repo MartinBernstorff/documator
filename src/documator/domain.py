@@ -16,7 +16,7 @@ class ExistingPath(RootModel[Path]):
         return value
 
 
-class InputDir(ExistingPath):
+class ExistingDir(ExistingPath):
     @field_validator("root")
     @classmethod
     def _path_is_dir(cls, value: Path) -> Path:
@@ -27,11 +27,12 @@ class InputDir(ExistingPath):
         return value
 
 
-# The render creates the output tree, so it need not exist beforehand.
-class OutputDir(RootModel[Path]): ...
+class InputDir(ExistingDir): ...
+
+
+# Only the root must exist; the render creates the subfolders it mirrors.
+class OutputDir(ExistingDir): ...
 
 
 TimeoutSeconds = NewType("TimeoutSeconds", float)
 ExitCode = NewType("ExitCode", int)
-
-OPERATIONAL_ERROR = ExitCode(2)

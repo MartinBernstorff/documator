@@ -15,10 +15,6 @@ def test_existing_path_rejects_missing_path(tmp_path: Path) -> None:
         ExistingPath(tmp_path / "nope")
 
 
-def test_input_dir_accepts_directory(tmp_path: Path) -> None:
-    assert InputDir(tmp_path).root == tmp_path
-
-
 def test_input_dir_rejects_file(tmp_path: Path) -> None:
     note = tmp_path / "note.md"
     note.touch()
@@ -26,6 +22,10 @@ def test_input_dir_rejects_file(tmp_path: Path) -> None:
         InputDir(note)
 
 
-def test_output_dir_accepts_missing_path(tmp_path: Path) -> None:
-    missing = tmp_path / "nope"
-    assert OutputDir(missing).root == missing
+def test_output_dir_accepts_existing_dir(tmp_path: Path) -> None:
+    assert OutputDir(tmp_path).root == tmp_path
+
+
+def test_output_dir_rejects_missing_dir(tmp_path: Path) -> None:
+    with pytest.raises(ValidationError):
+        OutputDir(tmp_path / "nope")
