@@ -1,3 +1,4 @@
+import logging
 from collections.abc import Callable
 from pathlib import Path
 from typing import Annotated
@@ -36,6 +37,7 @@ def render(
 
 
 def main(argv: list[str] | None = None) -> int:
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     command = typer.main.get_command(app)
     try:
         return command.main(args=argv, standalone_mode=False) or 0
