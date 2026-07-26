@@ -53,9 +53,18 @@ def test_non_executable_fence_passes_through_unchanged() -> None:
     assert parse(source) == [PassthroughBlock(Markdown(source))]
 
 
-def test_indented_fence_is_not_top_level_and_passes_through() -> None:
+def test_only_a_fence_at_column_zero_is_top_level() -> None:
     source = Markdown("    ```\n    !echo hi\n    ```\n")
     assert parse(source) == [PassthroughBlock(Markdown(source))]
+
+
+def test_escaped_bang_alongside_a_command_is_a_structural_error() -> None:
+    source = Markdown("```\n!echo hi\n!!echo literal\n```\n")
+    assert parse(source) == [
+        StructuralErrorBlock(
+            Markdown(source), StructuralError.COMMAND_WITH_OTHER_CONTENT
+        )
+    ]
 
 
 def test_shorter_fence_does_not_close_a_longer_one() -> None:
