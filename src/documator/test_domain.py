@@ -4,6 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from documator.domain import ExistingPath, InputDir, OutputDir, TimeoutSeconds
+from documator.tree_layout import TreeLayout, build_tree
 
 
 def test_existing_path_accepts_existing_path(tmp_path: Path) -> None:
@@ -16,10 +17,10 @@ def test_existing_path_rejects_missing_path(tmp_path: Path) -> None:
 
 
 def test_input_dir_rejects_file(tmp_path: Path) -> None:
-    note = tmp_path / "note.md"
-    note.touch()
+    build_tree(tmp_path, TreeLayout("note.md |"))
+
     with pytest.raises(ValidationError):
-        InputDir(note)
+        InputDir(tmp_path / "note.md")
 
 
 def test_output_dir_accepts_existing_dir(tmp_path: Path) -> None:
