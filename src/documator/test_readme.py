@@ -1,0 +1,30 @@
+import os
+import re
+import subprocess
+from pathlib import Path
+
+from documator.execution import Command
+
+
+def _try_it_block(readme: Path) -> Command:
+    block = re.search(
+        r"### Try it\n+```sh\n(?P<commands>.*?)```", readme.read_text(), re.DOTALL
+    )
+    assert block is not None, "README has no fenced sh block under '### Try it'"
+    return Command(block["commands"])
+
+
+def test_readme_try_it_block_renders(tmp_path: Path) -> None:
+    repo = Path(__file__).parents[2]
+    # uv discovers no project from a tempdir, so point it back at this checkout.
+    result = subprocess.run(
+        _try_it_block(repo / "README.md"),
+        shell=True,
+        cwd=tmp_path,
+        env={**os.environ, "UV_PROJECT": str(repo)},
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (tmp_path / "out" / "index.md").read_text() == "# Title\n"
