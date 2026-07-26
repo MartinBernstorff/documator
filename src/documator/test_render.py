@@ -56,6 +56,46 @@ def test_prunes_output_paths_not_produced_by_this_run(
     assert (output_dir / "note.md").exists()
 
 
+def test_stale_file_does_not_block_a_path_that_became_a_directory(
+    tmp_path: Path,
+) -> None:
+    input_dir = tmp_path / "in"
+    (input_dir / "note.md").mkdir(parents=True)
+    (input_dir / "note.md" / "inner.md").write_text("inner\n")
+    output_dir = tmp_path / "out"
+    output_dir.mkdir()
+    (output_dir / "note.md").write_text("stale\n")
+
+    assert _render(input_dir, output_dir) == 0
+    assert (output_dir / "note.md" / "inner.md").read_text() == "inner\n"
+
+
+def test_stale_directory_does_not_block_a_path_that_became_a_file(
+    tmp_path: Path,
+) -> None:
+    input_dir = tmp_path / "in"
+    input_dir.mkdir()
+    (input_dir / "note.md").write_text("note\n")
+    output_dir = tmp_path / "out"
+    (output_dir / "note.md").mkdir(parents=True)
+    (output_dir / "note.md" / "stale.md").write_text("stale\n")
+
+    assert _render(input_dir, output_dir) == 0
+    assert (output_dir / "note.md").read_text() == "note\n"
+
+
+def test_copies_file_mode(tmp_path: Path) -> None:
+    input_dir = tmp_path / "in"
+    input_dir.mkdir()
+    script = input_dir / "run.sh"
+    script.write_text("#!/bin/sh\n")
+    script.chmod(0o755)
+    output_dir = tmp_path / "out"
+
+    assert _render(input_dir, output_dir) == 0
+    assert (output_dir / "run.sh").stat().st_mode & 0o777 == 0o755
+
+
 def test_renders_files_in_sorted_path_order(
     vault: Path, tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:

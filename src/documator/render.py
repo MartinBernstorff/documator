@@ -27,19 +27,21 @@ def _directory_conflict(input_dir: InputDir, output_dir: OutputDir) -> str | Non
     return None
 
 
-def _relative_files(root: Path) -> list[RelativePath]:
+def _relative_files(input_dir: InputDir) -> list[RelativePath]:
+    source = input_dir.root
     return sorted(
-        (RelativePath(p.relative_to(root)) for p in root.rglob("*") if p.is_file()),
+        (RelativePath(p.relative_to(source)) for p in source.rglob("*") if p.is_file()),
         key=str,
     )
 
 
-def _prune(root: Path, produced: set[RelativePath]) -> None:
-    # Children sort after their parent, so reverse order empties a directory
-    # before we reach the directory itself.
-    for path in sorted(root.rglob("*"), key=str, reverse=True):
-        if path.is_file() and RelativePath(path.relative_to(root)) not in produced:
-            log.info("pruned %s", path.relative_to(root))
+def _prune(output_dir: OutputDir, produced: set[RelativePath]) -> None:
+    destination = output_dir.root
+    # Children sort after parents, so reverse order empties a directory first.
+    for path in sorted(destination.rglob("*"), key=str, reverse=True):
+        relative = RelativePath(path.relative_to(destination))
+        if path.is_file() and relative not in produced:
+            log.info("pruned %s", relative)
             path.unlink()
         elif path.is_dir() and not any(path.iterdir()):
             path.rmdir()
@@ -53,16 +55,15 @@ def render(
         log.error(conflict)
         return EXIT_OPERATIONAL
 
-    source = input_dir.root
-    destination = output_dir.root
+    relative_paths = _relative_files(input_dir)
 
-    produced: set[RelativePath] = set()
-    for relative in _relative_files(source):
-        target = destination / relative
+    # Prune first, so a stale path cannot block a file whose kind changed.
+    _prune(output_dir, set(relative_paths))
+
+    for relative in relative_paths:
+        target = output_dir.root / relative
         target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(source / relative, target)
-        produced.add(relative)
+        shutil.copy2(input_dir.root / relative, target)
         log.info("rendered %s", relative)
 
-    _prune(destination, produced)
     return EXIT_CLEAN
