@@ -6,6 +6,7 @@ from typing import NewType
 from iterpy import Arr
 
 from documator.execution import Command
+from documator.transclusion import EMBED, Reference
 
 Markdown = NewType("Markdown", str)
 Line = NewType("Line", str)
@@ -43,12 +44,19 @@ class ExecutableBlock:
 
 
 @dataclass(frozen=True, slots=True)
+class TransclusionBlock:
+    reference: Reference
+
+
+@dataclass(frozen=True, slots=True)
 class StructuralErrorBlock:
     text: Markdown
     reason: type[StructuralError]
 
 
-type Block = PassthroughBlock | ExecutableBlock | StructuralErrorBlock
+type Block = (
+    PassthroughBlock | ExecutableBlock | TransclusionBlock | StructuralErrorBlock
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,7 +75,7 @@ type _Segment = _Prose | _Fence
 
 def parse(source: Markdown) -> list[Block]:
     lines = [Line(line) for line in source.splitlines(keepends=True)]
-    return Arr(_segments(lines)).map(_to_block).to_list()
+    return Arr(_segments(lines)).map(_to_blocks).flatten().to_list()
 
 
 def _segments(lines: list[Line]) -> Iterator[_Segment]:
@@ -90,12 +98,28 @@ def _segments(lines: list[Line]) -> Iterator[_Segment]:
         yield _Prose(prose)
 
 
-def _to_block(segment: _Segment) -> Block:
+def _to_blocks(segment: _Segment) -> list[Block]:
     if isinstance(segment, _Prose):
-        return PassthroughBlock(_joined(segment.lines))
+        return _split_embeds(_joined(segment.lines))
     if not segment.closed:
-        return StructuralErrorBlock(_joined(segment.lines), UnterminatedFence)
-    return _classify(segment.lines)
+        return [StructuralErrorBlock(_joined(segment.lines), UnterminatedFence)]
+    return [_classify(segment.lines)]
+
+
+# Only prose is split: inside a fence an embed is code being quoted, not a transclusion.
+def _split_embeds(prose: Markdown) -> list[Block]:
+    blocks: list[Block] = []
+    cursor = 0
+    for embed in EMBED.finditer(prose):
+        if prose[cursor : embed.start()]:
+            blocks.append(PassthroughBlock(Markdown(prose[cursor : embed.start()])))
+        blocks.append(TransclusionBlock(Reference(embed["reference"])))
+        cursor = embed.end()
+    if not blocks:
+        return [PassthroughBlock(prose)]
+    if prose[cursor:]:
+        blocks.append(PassthroughBlock(Markdown(prose[cursor:])))
+    return blocks
 
 
 def _opening_delimiter(line: Line) -> Delimiter | None:

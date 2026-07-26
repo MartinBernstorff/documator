@@ -1,0 +1,435 @@
+import logging
+from pathlib import Path
+
+import pytest
+from inline_snapshot import snapshot
+
+from documator.domain import InputDir, OutputDir, TimeoutSeconds
+from documator.render import render
+from documator.tree_layout import TreeLayout, assert_tree, build_tree
+
+
+def _render(input_dir: Path, output_dir: Path) -> int:
+    return render(InputDir(input_dir), OutputDir(output_dir), TimeoutSeconds(10.0))
+
+
+def test_inlines_the_full_contents_of_a_matching_note(tmp_path: Path) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              index.md | before\\n\\n![[Shared]]\\n\\nafter\\n
+              Shared.md | # Shared\\n\\nbody\\n
+            out
+        """),
+    )
+
+    assert _render(tmp_path / "in", tmp_path / "out") == 0
+
+    assert (tmp_path / "out" / "index.md").read_text() == snapshot("""\
+before
+
+# Shared
+
+body
+
+
+after
+""")
+
+
+def test_matches_a_note_case_insensitively(tmp_path: Path) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              index.md | ![[shared note]]\\n
+              Shared Note.md | body\\n
+            out
+        """),
+    )
+
+    assert _render(tmp_path / "in", tmp_path / "out") == 0
+
+    assert (tmp_path / "out" / "index.md").read_text() == snapshot("""\
+body
+
+""")
+
+
+def test_matches_a_note_named_with_its_extension(tmp_path: Path) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              index.md | ![[Shared.md]]\\n
+              Shared.md | body\\n
+            out
+        """),
+    )
+
+    assert _render(tmp_path / "in", tmp_path / "out") == 0
+
+    assert (tmp_path / "out" / "index.md").read_text() == snapshot("""\
+body
+
+""")
+
+
+def test_matches_a_note_anywhere_in_the_vault(tmp_path: Path) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              deep
+                index.md | ![[Shared]]\\n
+              other
+                Shared.md | body\\n
+            out
+        """),
+    )
+
+    assert _render(tmp_path / "in", tmp_path / "out") == 0
+
+    assert (tmp_path / "out" / "deep" / "index.md").read_text() == snapshot("""\
+body
+
+""")
+
+
+def test_path_qualified_reference_disambiguates_a_collision(tmp_path: Path) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              index.md | ![[left/Shared]]\\n
+              left
+                Shared.md | from left\\n
+              right
+                Shared.md | from right\\n
+            out
+        """),
+    )
+
+    assert _render(tmp_path / "in", tmp_path / "out") == 0
+
+    assert (tmp_path / "out" / "index.md").read_text() == snapshot("""\
+from left
+
+""")
+
+
+def test_transcluded_note_executes_its_own_blocks(tmp_path: Path) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              index.md | ![[Shared]]\\n
+              Shared.md | ```\\n!echo live\\n```\\n
+            out
+        """),
+    )
+
+    assert _render(tmp_path / "in", tmp_path / "out") == 0
+
+    assert (tmp_path / "out" / "index.md").read_text() == snapshot("""\
+```
+live
+```
+
+""")
+
+
+def test_transcluded_block_runs_beside_the_note_it_came_from(tmp_path: Path) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              index.md | ![[Shared]]\\n
+              sub
+                Shared.md | ```\\n!cat sibling.txt\\n```\\n
+                sibling.txt | neighbour\\n
+            out
+        """),
+    )
+
+    assert _render(tmp_path / "in", tmp_path / "out") == 0
+
+    assert (tmp_path / "out" / "index.md").read_text() == snapshot("""\
+```
+neighbour
+```
+
+""")
+
+
+def test_nested_transclusion_is_inlined(tmp_path: Path) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              index.md | top\\n\\n![[Middle]]\\n
+              Middle.md | middle\\n\\n![[Leaf]]\\n
+              Leaf.md | leaf\\n
+            out
+        """),
+    )
+
+    assert _render(tmp_path / "in", tmp_path / "out") == 0
+
+    assert (tmp_path / "out" / "index.md").read_text() == snapshot("""\
+top
+
+middle
+
+leaf
+
+
+""")
+
+
+def test_the_same_note_may_be_transcluded_twice(tmp_path: Path) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              index.md | ![[Shared]]![[Shared]]\\n
+              Shared.md | body\\n
+            out
+        """),
+    )
+
+    assert _render(tmp_path / "in", tmp_path / "out") == 0
+
+    assert (tmp_path / "out" / "index.md").read_text() == snapshot("""\
+body
+body
+
+""")
+
+
+def test_transclusion_inside_a_fence_is_left_alone(tmp_path: Path) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              index.md | ```\\nwrite ![[Shared]] to embed\\n```\\n
+              Shared.md | body\\n
+            out
+        """),
+    )
+
+    assert _render(tmp_path / "in", tmp_path / "out") == 0
+
+    assert (tmp_path / "out" / "index.md").read_text() == snapshot("""\
+```
+write ![[Shared]] to embed
+```
+""")
+
+
+def test_transclusion_is_re_resolved_on_every_render(tmp_path: Path) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              index.md | ![[Shared]]\\n
+              Shared.md | first\\n
+            out
+        """),
+    )
+
+    assert _render(tmp_path / "in", tmp_path / "out") == 0
+    (tmp_path / "in" / "Shared.md").write_text("second\n")
+    assert _render(tmp_path / "in", tmp_path / "out") == 0
+
+    assert (tmp_path / "out" / "index.md").read_text() == snapshot("""\
+second
+
+""")
+
+
+def test_no_match_marks_the_failure_in_place_and_is_operational(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              index.md | before ![[Missing]] after\\n
+            out
+        """),
+    )
+
+    with caplog.at_level(logging.ERROR, logger="documator"):
+        assert _render(tmp_path / "in", tmp_path / "out") == 2
+
+    assert (tmp_path / "out" / "index.md").read_text() == snapshot("""\
+before [documator: no note matches transclusion "Missing"] after
+""")
+    assert "index.md" in caplog.text
+
+
+def test_ambiguous_reference_marks_the_candidates_in_place(tmp_path: Path) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              index.md | ![[Shared]]\\n
+              left
+                Shared.md | from left\\n
+              right
+                Shared.md | from right\\n
+            out
+        """),
+    )
+
+    assert _render(tmp_path / "in", tmp_path / "out") == 2
+
+    assert (tmp_path / "out" / "index.md").read_text() == snapshot("""\
+[documator: transclusion "Shared" matches left/Shared.md, right/Shared.md]
+""")
+
+
+def test_fragment_reference_is_unsupported(tmp_path: Path) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              index.md | ![[Shared#Heading]]\\n
+              Shared.md | body\\n
+            out
+        """),
+    )
+
+    assert _render(tmp_path / "in", tmp_path / "out") == 2
+
+    assert (tmp_path / "out" / "index.md").read_text() == snapshot("""\
+[documator: transclusion "Shared#Heading" names a fragment, which is unsupported]
+""")
+
+
+def test_a_cycle_is_marked_in_place_rather_than_hanging(tmp_path: Path) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              index.md | ![[Middle]]\\n
+              Middle.md | ![[index]]\\n
+            out
+        """),
+    )
+
+    assert _render(tmp_path / "in", tmp_path / "out") == 2
+
+    assert (tmp_path / "out" / "index.md").read_text() == snapshot("""\
+[documator: transclusion cycle: index.md -> Middle.md -> index.md]
+
+""")
+
+
+def test_a_note_transcluding_itself_is_a_cycle(tmp_path: Path) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              index.md | ![[index]]\\n
+            out
+        """),
+    )
+
+    assert _render(tmp_path / "in", tmp_path / "out") == 2
+
+    assert (tmp_path / "out" / "index.md").read_text() == snapshot("""\
+[documator: transclusion cycle: index.md -> index.md]
+""")
+
+
+def test_an_operational_failure_outranks_a_block_failure(tmp_path: Path) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              a.md | ```\\n!exit 3\\n```\\n
+              b.md | ![[Missing]]\\n
+            out
+        """),
+    )
+
+    assert _render(tmp_path / "in", tmp_path / "out") == 2
+
+
+def test_a_failing_block_in_a_transcluded_note_fails_the_run(tmp_path: Path) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              index.md | ![[Shared]]\\n
+              Shared.md | ```\\n!exit 3\\n```\\n
+            out
+        """),
+    )
+
+    assert _render(tmp_path / "in", tmp_path / "out") == 1
+
+    assert (tmp_path / "out" / "index.md").read_text() == snapshot("""\
+```
+[documator: exit 3]
+```
+
+""")
+
+
+def test_a_transcluded_note_is_still_rendered_on_its_own(tmp_path: Path) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              index.md | ![[Shared]]\\n
+              Shared.md | ```\\n!echo live\\n```\\n
+            out
+        """),
+    )
+
+    assert _render(tmp_path / "in", tmp_path / "out") == 0
+
+    assert_tree(
+        tmp_path / "out",
+        TreeLayout("""
+            index.md | ```\\nlive\\n```\\n\\n
+            Shared.md | ```\\nlive\\n```\\n
+        """),
+    )
+
+
+def test_a_non_markdown_embed_is_left_untouched(tmp_path: Path) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              index.md | ![[diagram.png]]\\n
+              diagram.png | not really a png\\n
+            out
+        """),
+    )
+
+    assert _render(tmp_path / "in", tmp_path / "out") == 0
+
+    assert (tmp_path / "out" / "index.md").read_text() == snapshot("![[diagram.png]]\n")
+
+
+def test_an_unmatched_markdown_reference_is_still_an_error(tmp_path: Path) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              index.md | ![[Missing.md]]\\n
+            out
+        """),
+    )
+
+    assert _render(tmp_path / "in", tmp_path / "out") == 2
+
+    assert (tmp_path / "out" / "index.md").read_text() == snapshot("""\
+[documator: no note matches transclusion "Missing.md"]
+""")
