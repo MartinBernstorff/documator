@@ -34,4 +34,12 @@ Run everything at once with `moon check --all`, or `moon ci --base main` for the
 - **Do not use fixtures or shared constants to set up test data.** Inline the setup in each test so it reads independently.
 - **Never maintain a `__all__` list.** Instead, re-export with `from .module import *` in the package's `__init__.py`.
 - **Prefer iterators over manual for-loops.** Use `iterpy`: `Arr([1, 2, 3]).map(lambda x: x + 1).filter(lambda x: x > 2).to_list()`.
+- **Avoid constants.** Before introducing one, ask whether it should be an argument supplied by the caller instead.
 - Commits are automatically validated through pre-commit hooks (lefthook → `moon ci`).
+
+## Testing conventions
+
+- Co-locate tests with implementation as `test_<module>.py`. No `tests` folder.
+- Test against the real implementation unless it is too slow or has real-world consequences.
+- Avoid spies and mocks. When you must substitute, use a fake — typically a fast in-memory implementation.
+- If a fake can drift from the real implementation, add a contract test that runs both against the same expectations.
