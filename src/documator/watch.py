@@ -27,7 +27,11 @@ def watch(
     _render_swallowing_errors(input_dir, output_dir, timeout)
     logger.info("Watching %s for changes", input_dir.root)
     for changes in watch_paths(
-        input_dir.root, debounce=DEBOUNCE_MS, stop_event=stop_event
+        input_dir.root,
+        debounce=DEBOUNCE_MS,
+        stop_event=stop_event,
+        # Ctrl-C is how a session ends; let the generator return instead of exploding.
+        raise_interrupt=False,
     ):
         logger.info("Re-rendering after %d change(s)", len(changes))
         _render_swallowing_errors(input_dir, output_dir, timeout)

@@ -1,3 +1,4 @@
+import signal
 import subprocess
 import sys
 import time
@@ -253,3 +254,32 @@ def test_watch_flag_keeps_rendering_after_the_first_pass(tmp_path: Path) -> None
     finally:
         process.terminate()
         process.wait(timeout=WATCH_DEADLINE_SECONDS)
+
+
+def test_interrupting_watch_exits_zero_despite_a_failing_block(tmp_path: Path) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              note.md | ```\\n!echo partial; exit 3\\n```\\n
+            out
+        """),
+    )
+    rendered = tmp_path / "out" / "note.md"
+
+    process = subprocess.Popen(
+        [
+            sys.executable,
+            "-m",
+            "documator",
+            "render",
+            str(tmp_path / "in"),
+            str(tmp_path / "out"),
+            "--watch",
+        ]
+    )
+
+    _wait_for(lambda: rendered.is_file() and "exit 3" in rendered.read_text())
+    process.send_signal(signal.SIGINT)
+
+    assert process.wait(timeout=WATCH_DEADLINE_SECONDS) == 0

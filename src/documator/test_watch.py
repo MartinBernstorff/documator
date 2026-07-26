@@ -6,6 +6,7 @@ from pathlib import Path
 from threading import Event, Thread
 
 import pytest
+from inline_snapshot import snapshot
 
 from documator.domain import ExitCode, InputDir, OutputDir
 from documator.engine import DEFAULT_TIMEOUT
@@ -227,7 +228,12 @@ def test_a_failing_block_does_not_taint_a_clean_shutdown(tmp_path: Path) -> None
     )
 
     assert exit_code == 0
-    assert "[documator: exit 3]" in (tmp_path / "out" / "note.md").read_text()
+    assert (tmp_path / "out" / "note.md").read_text() == snapshot("""\
+```
+partial
+[documator: exit 3]
+```
+""")
 
 
 def test_a_render_that_raises_is_logged_but_shuts_down_cleanly(
@@ -259,4 +265,6 @@ def test_a_render_that_raises_is_logged_but_shuts_down_cleanly(
         unreadable.chmod(0o600)
 
     assert exit_code == 0
-    assert any("Render failed" in record.message for record in caplog.records)
+    assert [record.message for record in caplog.records] == snapshot(
+        ["Render failed; still watching"]
+    )
