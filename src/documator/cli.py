@@ -23,6 +23,18 @@ def _parsed[T: RootModel[Path]](model: type[T]) -> Callable[[str], T]:
     return parse
 
 
+def _parsed_timeout(raw: str) -> TimeoutSeconds:
+    try:
+        seconds = TimeoutSeconds(float(raw))
+    except ValueError as error:
+        raise typer.BadParameter(
+            f"timeout is not a number of seconds: {raw}"
+        ) from error
+    if seconds <= 0:
+        raise typer.BadParameter(f"timeout must be positive: {raw}")
+    return seconds
+
+
 @app.callback()
 def root() -> None: ...
 
@@ -31,8 +43,11 @@ def root() -> None: ...
 def render(
     input_dir: Annotated[InputDir, typer.Argument(parser=_parsed(InputDir))],
     output_dir: Annotated[OutputDir, typer.Argument(parser=_parsed(OutputDir))],
+    timeout: Annotated[
+        TimeoutSeconds, typer.Option(parser=_parsed_timeout)
+    ] = TimeoutSeconds(10.0),
 ) -> None:
-    raise typer.Exit(_render(input_dir, output_dir, TimeoutSeconds(10.0)))
+    raise typer.Exit(_render(input_dir, output_dir, timeout))
 
 
 def main(argv: list[str] | None = None) -> int:

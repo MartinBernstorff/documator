@@ -2,3 +2,7 @@ target-version = "py314"
 
 [lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
+
+# NewType calls are identity at runtime, so they are safe as argument defaults.
+[lint.flake8-bugbear]
+extend-immutable-calls = ["documator.domain.TimeoutSeconds"]

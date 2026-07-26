@@ -225,3 +225,149 @@ def test_empty_input_directory_produces_an_empty_output(tmp_path: Path) -> None:
     assert _render(tmp_path / "in", tmp_path / "out") == 0
 
     assert_tree(tmp_path / "out", TreeLayout(""))
+
+
+def test_executable_block_is_replaced_by_its_output(tmp_path: Path) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              note.md | # Note\\n\\n```\\n!echo hi\\n```\\n\\nafter\\n
+            out
+        """),
+    )
+
+    assert _render(tmp_path / "in", tmp_path / "out") == 0
+
+    assert (tmp_path / "out" / "note.md").read_text() == (
+        "# Note\n\n```\nhi\n```\n\nafter\n"
+    )
+
+
+def test_non_markdown_file_is_copied_without_executing_its_blocks(
+    tmp_path: Path,
+) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              recipe.txt | ```\\n!echo hi\\n```\\n
+            out
+        """),
+    )
+
+    assert _render(tmp_path / "in", tmp_path / "out") == 0
+
+    assert (tmp_path / "out" / "recipe.txt").read_text() == "```\n!echo hi\n```\n"
+
+
+def test_failing_block_embeds_its_output_and_the_run_continues(tmp_path: Path) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              a.md | ```\\n!echo partial; exit 3\\n```\\n
+              b.md | ```\\n!echo second\\n```\\n
+            out
+        """),
+    )
+
+    assert _render(tmp_path / "in", tmp_path / "out") == 1
+
+    assert (tmp_path / "out" / "a.md").read_text() == (
+        "```\npartial\n[documator: exit 3]\n```\n"
+    )
+    assert (tmp_path / "out" / "b.md").read_text() == "```\nsecond\n```\n"
+
+
+def test_timeout_bounds_every_block(tmp_path: Path) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              note.md | ```\\n!sleep 5\\n```\\n
+            out
+        """),
+    )
+
+    exit_code = render(
+        InputDir(tmp_path / "in"), OutputDir(tmp_path / "out"), TimeoutSeconds(0.3)
+    )
+
+    assert exit_code == 1
+    assert "timed out" in (tmp_path / "out" / "note.md").read_text()
+
+
+def test_structural_error_is_marked_in_place_and_fails_the_run(tmp_path: Path) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              note.md | ```\\n!echo one\\n!echo two\\n```\\n
+            out
+        """),
+    )
+
+    assert _render(tmp_path / "in", tmp_path / "out") == 1
+
+    rendered = (tmp_path / "out" / "note.md").read_text()
+    assert "!echo one" in rendered
+    assert "more than one command line in a single block" in rendered
+
+
+def test_embedded_output_cannot_inject_links_or_tags(tmp_path: Path) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              note.md | ```\\n!echo '![[Note]] [[Other]] #tag'\\n```\\n
+            out
+        """),
+    )
+
+    assert _render(tmp_path / "in", tmp_path / "out") == 0
+
+    rendered = (tmp_path / "out" / "note.md").read_text()
+    assert "[[" not in rendered
+    assert "]]" not in rendered
+    assert "#tag" not in rendered
+    assert "Note" in rendered
+
+
+def test_logs_each_executed_block_with_its_file(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              sub
+                note.md | ```\\n!echo hi\\n```\\n
+            out
+        """),
+    )
+
+    with caplog.at_level(logging.INFO, logger="documator"):
+        assert _render(tmp_path / "in", tmp_path / "out") == 0
+
+    assert "executing echo hi in sub/note.md" in caplog.text
+    assert "rendered sub/note.md" in caplog.text
+
+
+def test_logs_a_failing_block_where_it_arises(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              note.md | ```\\n!exit 3\\n```\\n
+            out
+        """),
+    )
+
+    with caplog.at_level(logging.ERROR, logger="documator"):
+        assert _render(tmp_path / "in", tmp_path / "out") == 1
+
+    assert "note.md" in caplog.text
+    assert "exit 3" in caplog.text
