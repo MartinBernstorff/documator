@@ -15,7 +15,17 @@ from documator.parsing import (
     Markdown,
     PassthroughBlock,
     StructuralErrorBlock,
+    TransclusionBlock,
     parse,
+)
+from documator.transclusion import (
+    NonNoteEmbed,
+    NotePath,
+    Reference,
+    TransclusionFailure,
+    Vault,
+    index,
+    resolve,
 )
 
 RelativePath = NewType("RelativePath", Path)
@@ -75,51 +85,88 @@ def _prune(output_dir: OutputDir, produced: set[RelativePath]) -> None:
             path.rmdir()
 
 
+# An unresolvable transclusion stops the engine (2); a bad command only fails content.
 @dataclass(frozen=True, slots=True)
-class _RenderedBlock:
-    text: Markdown
-    failure: Annotation | None
+class _Failure:
+    note: Annotation
+    exit_code: ExitCode
 
 
 @dataclass(frozen=True, slots=True)
-class _RenderedMarkdown:
+class _Rendered:
     text: Markdown
-    failures: list[Annotation]
+    failures: list[_Failure]
 
 
-def _render_block(
-    block: Block,
-    relative: RelativePath,
-    working_dir: WorkingDir,
-    timeout: TimeoutSeconds,
-) -> _RenderedBlock:
+# The chain is the transclusion path that led here, so a cycle is visible from inside.
+@dataclass(frozen=True, slots=True)
+class _Origin:
+    vault: Vault
+    chain: tuple[NotePath, ...]
+
+    def note(self) -> NotePath:
+        return self.chain[-1]
+
+    def working_dir(self) -> WorkingDir:
+        return self.vault.beside(self.note())
+
+    def entered(self, note: NotePath) -> _Origin:
+        return _Origin(self.vault, (*self.chain, note))
+
+
+def _render_block(block: Block, origin: _Origin, timeout: TimeoutSeconds) -> _Rendered:
     match block:
         case PassthroughBlock(text):
-            return _RenderedBlock(text, None)
+            return _Rendered(text, [])
         case ExecutableBlock(command):
-            log.info("executing %s in %s", command, relative)
-            executed = execute_block(command, working_dir, timeout)
-            if executed.failure is not None:
-                log.error("%s in %s: %s", command, relative, executed.failure)
-            return _RenderedBlock(Markdown(executed.block), executed.failure)
+            log.info("executing %s in %s", command, origin.note())
+            executed = execute_block(command, origin.working_dir(), timeout)
+            if executed.failure is None:
+                return _Rendered(Markdown(executed.block), [])
+            log.error("%s in %s: %s", command, origin.note(), executed.failure)
+            return _Rendered(
+                Markdown(executed.block), [_Failure(executed.failure, ExitCode(1))]
+            )
+        case TransclusionBlock(reference):
+            return _render_transclusion(reference, origin, timeout)
         case StructuralErrorBlock(text, reason):
             failure = Annotation(reason.message)
-            log.error("%s in %s", failure, relative)
-            return _RenderedBlock(Markdown(f"{text}\n{marker(failure)}\n"), failure)
+            log.error("%s in %s", failure, origin.note())
+            return _Rendered(
+                Markdown(f"{text}\n{marker(failure)}\n"),
+                [_Failure(failure, ExitCode(1))],
+            )
+
+
+def _render_transclusion(
+    reference: Reference, origin: _Origin, timeout: TimeoutSeconds
+) -> _Rendered:
+    resolution = resolve(origin.vault, reference, origin.chain)
+    if isinstance(resolution, NonNoteEmbed):
+        return _Rendered(Markdown(str(resolution)), [])
+    if isinstance(resolution, NotePath):
+        log.info("transcluding %s into %s", resolution, origin.note())
+        return _render_markdown(
+            Markdown(origin.vault.read(resolution)),
+            origin.entered(resolution),
+            timeout,
+        )
+    return _operational(resolution, origin)
+
+
+def _operational(failure: TransclusionFailure, origin: _Origin) -> _Rendered:
+    note = Annotation(str(failure))
+    log.error("%s in %s", note, origin.note())
+    return _Rendered(Markdown(marker(note)), [_Failure(note, ExitCode(2))])
 
 
 def _render_markdown(
-    source: Markdown,
-    relative: RelativePath,
-    working_dir: WorkingDir,
-    timeout: TimeoutSeconds,
-) -> _RenderedMarkdown:
-    blocks = Arr(parse(source)).map(
-        lambda block: _render_block(block, relative, working_dir, timeout)
-    )
-    return _RenderedMarkdown(
+    source: Markdown, origin: _Origin, timeout: TimeoutSeconds
+) -> _Rendered:
+    blocks = Arr(parse(source)).map(lambda block: _render_block(block, origin, timeout))
+    return _Rendered(
         Markdown("".join(blocks.map(lambda block: block.text))),
-        [block.failure for block in blocks if block.failure is not None],
+        blocks.map(lambda block: Arr(block.failures)).flatten().to_list(),
     )
 
 
@@ -141,7 +188,10 @@ def render(
     # Prune first, so a stale path cannot block a file whose kind changed.
     _prune(output_dir, set(relative_paths))
 
-    failures: list[Annotation] = []
+    # Indexed once per run, so every transclusion in the run sees the same vault.
+    vault = index(input_dir)
+
+    failures: list[_Failure] = []
     for relative in relative_paths:
         source = input_dir.root / relative
         target = output_dir.root / relative
@@ -149,8 +199,7 @@ def render(
         if source.suffix.lower() == ".md":
             rendered = _render_markdown(
                 Markdown(source.read_text(encoding="utf-8")),
-                relative,
-                WorkingDir(source.parent),
+                _Origin(vault, (NotePath(relative),)),
                 timeout,
             )
             target.write_text(rendered.text, encoding="utf-8")
@@ -159,4 +208,4 @@ def render(
             shutil.copy2(source, target)
         log.info("rendered %s", relative)
 
-    return ExitCode(1 if failures else 0)
+    return ExitCode(max((failure.exit_code for failure in failures), default=0))

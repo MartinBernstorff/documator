@@ -6,9 +6,11 @@ from documator.parsing import (
     MultipleCommands,
     PassthroughBlock,
     StructuralErrorBlock,
+    TransclusionBlock,
     UnterminatedFence,
     parse,
 )
+from documator.transclusion import Reference
 
 
 def test_prose_only_document_is_a_single_passthrough_block() -> None:
@@ -171,3 +173,16 @@ def test_document_without_trailing_newline_round_trips() -> None:
 
 def test_empty_document_yields_no_blocks() -> None:
     assert parse(Markdown("")) == []
+
+
+def test_embed_in_prose_splits_into_a_transclusion_block() -> None:
+    assert parse(Markdown("before ![[Note]] after\n")) == [
+        PassthroughBlock(Markdown("before ")),
+        TransclusionBlock(Reference("Note")),
+        PassthroughBlock(Markdown(" after\n")),
+    ]
+
+
+def test_embed_spanning_a_line_break_is_not_a_transclusion() -> None:
+    source = Markdown("![[Note\n]]\n")
+    assert parse(source) == [PassthroughBlock(source)]
