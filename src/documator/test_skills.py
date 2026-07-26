@@ -234,6 +234,178 @@ def test_non_markdown_files_are_not_skills(tmp_path: Path) -> None:
     assert_tree(tmp_path / "out", TreeLayout(""))
 
 
+def test_dot_prefixed_paths_are_invisible(tmp_path: Path) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              foo.md | # Foo\\n
+              .hidden.md | # Hidden\\n
+              .obsidian
+                workspace.md | # Workspace\\n
+                app.json | {}\\n
+            out
+        """),
+    )
+
+    assert _skills(tmp_path / "in", tmp_path / "out") == 0
+
+    assert_tree(
+        tmp_path / "out",
+        TreeLayout("""
+            foo
+              SKILL.md | ---\\nname: foo\\ndescription: foo\\n---\\n# Foo\\n
+        """),
+    )
+
+
+def test_an_invisible_note_is_not_a_transclusion_target(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              foo.md | ![[Secret]]
+              .hidden
+                Secret.md | secret\\n
+            out
+        """),
+    )
+
+    with caplog.at_level(logging.ERROR, logger="documator"):
+        assert _skills(tmp_path / "in", tmp_path / "out") == 2
+
+    assert caplog.messages == snapshot(
+        ['no note matches transclusion "Secret" in foo.md']
+    )
+
+
+def test_an_invisible_attachment_embed_still_passes_through(tmp_path: Path) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              foo.md | ![[diagram.png]]\\n
+              .assets
+                diagram.png | binary\\n
+            out
+        """),
+    )
+
+    assert _skills(tmp_path / "in", tmp_path / "out") == 0
+
+    assert (tmp_path / "out" / "foo" / "SKILL.md").read_text() == snapshot("""\
+---
+name: foo
+description: foo
+---
+![[diagram.png]]
+""")
+
+
+def test_underscore_prefixed_paths_emit_nothing_but_still_transclude(
+    tmp_path: Path,
+) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              foo.md | ![[Partial]]
+              _draft.md | # Draft\\n
+              _parts
+                Partial.md | inlined\\n
+            out
+        """),
+    )
+
+    assert _skills(tmp_path / "in", tmp_path / "out") == 0
+
+    assert_tree(
+        tmp_path / "out",
+        TreeLayout("""
+            foo
+              SKILL.md | ---\\nname: foo\\ndescription: foo\\n---\\ninlined\\n
+        """),
+    )
+
+
+def test_an_inert_segment_anywhere_on_the_path_produces_no_skill(
+    tmp_path: Path,
+) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              a
+                _shared
+                  b
+                    foo.md | # Foo\\n
+            out
+        """),
+    )
+
+    assert _skills(tmp_path / "in", tmp_path / "out") == 0
+
+    assert_tree(tmp_path / "out", TreeLayout(""))
+
+
+def test_an_ignored_loose_file_is_logged_at_warning(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              foo.md | # Foo\\n
+              helper.py | print("hi")\\n
+            out
+        """),
+    )
+
+    with caplog.at_level(logging.INFO, logger="documator"):
+        assert _skills(tmp_path / "in", tmp_path / "out") == 0
+
+    assert [
+        (record.levelname, record.message) for record in caplog.records
+    ] == snapshot(
+        [
+            (
+                "WARNING",
+                "ignored helper.py: move it into a SKILL.md folder to bundle it",
+            ),
+            ("INFO", "compiled foo.md into foo/SKILL.md"),
+        ]
+    )
+
+
+def test_an_ignored_inert_path_is_logged_at_info(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              .DS_Store | junk\\n
+              _notes
+                todo.txt | later\\n
+            out
+        """),
+    )
+
+    with caplog.at_level(logging.INFO, logger="documator"):
+        assert _skills(tmp_path / "in", tmp_path / "out") == 0
+
+    assert [
+        (record.levelname, record.message) for record in caplog.records
+    ] == snapshot(
+        [
+            ("INFO", "ignored .DS_Store"),
+            ("INFO", "ignored _notes/todo.txt"),
+        ]
+    )
+
+
 def test_unresolvable_transclusion_is_an_operational_error(tmp_path: Path) -> None:
     build_tree(
         tmp_path,
