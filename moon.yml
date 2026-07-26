@@ -15,6 +15,7 @@ tasks:
   test:
     script: 'uv run pytest'
     inputs:
+      - 'pytest.toml'
       - 'pyproject.toml'
       - 'uv.lock'
       - '@group(sources)'
@@ -23,6 +24,7 @@ tasks:
   lint:
     script: 'uv run ruff check'
     inputs:
+      - 'ruff.toml'
       - 'pyproject.toml'
       - '@group(sources)'
       - '@group(tests)'
@@ -30,6 +32,7 @@ tasks:
   format:
     script: 'uv run ruff format --check'
     inputs:
+      - 'ruff.toml'
       - 'pyproject.toml'
       - '@group(sources)'
       - '@group(tests)'
@@ -37,6 +40,7 @@ tasks:
   typecheck:
     script: 'uv run pyrefly check'
     inputs:
+      - 'pyrefly.toml'
       - 'pyproject.toml'
       - 'uv.lock'
       - '@group(sources)'
