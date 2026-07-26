@@ -12,11 +12,15 @@ Always run tasks through **moon**, never the tool directly. This runs dependenci
 | --- | --- | --- |
 | Tests | `moon run documator:test` | pytest |
 | Lint | `moon run documator:lint` | ruff |
+| Lint (fix) | `moon run documator:lint-fix` | ruff (`--fix`) |
 | Format | `moon run documator:format` | ruff (`--check`) |
+| Format (fix) | `moon run documator:format-fix` | ruff |
 | Type-check | `moon run documator:typecheck` | pyrefly (`preset = all`) |
 | Modularity | `moon run documator:modularity` | tach |
 
-Run everything at once with `moon check --all`, or `moon ci --base main` for the full affected-only CI pass.
+Run everything at once with `moon ci --base main` — the same affected-only pass CI and the pre-commit hook run. Prefer it over `moon check --all`. Because it is affected-only, a change no task declares as an input resolves zero targets and passes trivially; add `--force` to bypass affected detection and the cache and run every task.
+
+Tasks come in `check` and `fix` pairs where the tool can auto-fix. The `fix` variants are `type: 'run'` and `runInCI: false`, so `moon ci` never rewrites your files — it only checks. Only the pre-commit hook (and an explicit `moon run`) invokes the `fix` variants, and it re-stages what they rewrite. `format-fix` depends on `lint-fix`, because `ruff check --fix` can emit code that still needs formatting.
 
 ## Conventions
 
@@ -24,7 +28,7 @@ Run everything at once with `moon check --all`, or `moon ci --base main` for the
 - When adding a new tool, wire it as a moon task **and** add it to the pre-commit hook (`lefthook.yml`). If the tool can auto-fix, run the fixing variant in the hook rather than the checking one.
 - Dependencies are managed with `uv` (`uv add`, `uv add --dev`). The lockfile is `uv.lock`.
 - Tool settings live in each tool's own config file (`ruff.toml`, `pyrefly.toml`, `pytest.toml`, `tach.toml`), never in `pyproject.toml`.
-- Pre-commit runs `moon ci` via lefthook, which is a `uv` dev dependency. `.conductor/settings.toml` installs the hooks on workspace creation (`scripts.setup`); outside Conductor, run `uv sync && uv run lefthook install` after cloning.
+- Pre-commit runs the `fix` tasks and then `moon ci` via lefthook, which is a `uv` dev dependency. `.conductor/settings.toml` installs the hooks on workspace creation (`scripts.setup`); outside Conductor, run `uv sync && uv run lefthook install` after cloning.
 
 ## Code conventions
 

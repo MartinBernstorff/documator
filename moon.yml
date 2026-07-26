@@ -29,6 +29,14 @@ tasks:
       - '@group(sources)'
       - '@group(tests)'
 
+  lint-fix:
+    extends: 'lint'
+    script: 'uv run ruff check --fix'
+    type: 'run'
+    options:
+      cache: false
+      runInCI: false
+
   format:
     script: 'uv run ruff format --check'
     inputs:
@@ -36,6 +44,15 @@ tasks:
       - 'pyproject.toml'
       - '@group(sources)'
       - '@group(tests)'
+
+  format-fix:
+    extends: 'format'
+    script: 'uv run ruff format'
+    deps: ['lint-fix']
+    type: 'run'
+    options:
+      cache: false
+      runInCI: false
 
   typecheck:
     script: 'uv run pyrefly check'

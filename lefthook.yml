@@ -1,4 +1,10 @@
 pre-commit:
+  piped: true
   commands:
+    fix:
+      priority: 1
+      run: moon run documator:lint-fix documator:format-fix
+      stage_fixed: true
     moon-ci:
+      priority: 2
       run: moon ci --base main
