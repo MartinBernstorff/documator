@@ -2,6 +2,8 @@
 
 A documentation CLI. Python 3.14, packaged with `uv` (src layout), tasks orchestrated by moonrepo.
 
+We use GitHub as an issue tracker.
+
 ## Running tasks
 
 Always run tasks through **moon**, never the tool directly. This runs dependencies and caches aggressively.
