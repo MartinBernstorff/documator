@@ -5,7 +5,8 @@ import pytest
 from inline_snapshot import snapshot
 
 from documator.domain import InputDir, OutputDir, TimeoutSeconds
-from documator.render import ConflictReason, render
+from documator.engine import ConflictReason
+from documator.render import render
 from documator.tree_layout import TreeLayout, assert_tree, build_tree
 
 

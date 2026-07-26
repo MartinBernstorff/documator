@@ -12,7 +12,14 @@ uv sync
 
 ```
 documator render INPUT_DIR OUTPUT_DIR [--watch] [--timeout SECONDS]
+documator skills INPUT_DIR OUTPUT_DIR [--timeout SECONDS]
 ```
+
+`render` mirrors the input tree. `skills` compiles the same templates into the flat
+`<skill-name>/SKILL.md` layout Claude's skill loader expects: nesting in the input tree
+is organisational only, the filename stem becomes the skill name, and the frontmatter is
+generated — any keys the template declares pass through, and a declared `description`
+wins over the name-derived placeholder.
 
 For the current options, run:
 

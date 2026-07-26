@@ -4,6 +4,8 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
+from inline_snapshot import snapshot
+
 from documator.cli import main
 from documator.tree_layout import TreeLayout, assert_tree, build_tree
 
@@ -149,6 +151,71 @@ def test_unknown_flag_exits_two(tmp_path: Path) -> None:
 
     args = ["render", str(tmp_path / "in"), str(tmp_path / "out"), "--parallel"]
     assert main(args) == 2
+
+
+def test_skills_flattens_a_nested_template_tree(tmp_path: Path) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              a
+                foo.md | # Foo\\n
+            out
+        """),
+    )
+
+    assert main(["skills", str(tmp_path / "in"), str(tmp_path / "out")]) == 0
+
+    assert_tree(
+        tmp_path / "out",
+        TreeLayout("""
+            foo
+              SKILL.md | ---\\nname: foo\\ndescription: foo\\n---\\n# Foo\\n
+        """),
+    )
+
+
+def test_skills_with_a_failing_block_exits_one(tmp_path: Path) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              foo.md | ```\\n!exit 3\\n```\\n
+            out
+        """),
+    )
+
+    assert main(["skills", str(tmp_path / "in"), str(tmp_path / "out")]) == 1
+
+
+def test_skills_with_missing_input_dir_exits_two(tmp_path: Path) -> None:
+    build_tree(tmp_path, TreeLayout("out"))
+
+    assert main(["skills", str(tmp_path / "nope"), str(tmp_path / "out")]) == 2
+
+
+def test_skills_timeout_flag_bounds_a_block(tmp_path: Path) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              foo.md | ```\\n!sleep 5\\n```\\n
+            out
+        """),
+    )
+
+    args = ["skills", str(tmp_path / "in"), str(tmp_path / "out"), "--timeout", "0.3"]
+    assert main(args) == 1
+
+    assert (tmp_path / "out" / "foo" / "SKILL.md").read_text() == snapshot("""\
+---
+name: foo
+description: foo
+---
+```
+[documator: timed out after 0.3s]
+```
+""")
 
 
 def test_watch_flag_keeps_rendering_after_the_first_pass(tmp_path: Path) -> None:

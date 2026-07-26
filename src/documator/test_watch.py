@@ -8,7 +8,7 @@ from threading import Event, Thread
 import pytest
 
 from documator.domain import ExitCode, InputDir, OutputDir
-from documator.render import DEFAULT_TIMEOUT
+from documator.engine import DEFAULT_TIMEOUT
 from documator.tree_layout import TreeLayout, assert_tree, build_tree
 from documator.watch import watch
 
