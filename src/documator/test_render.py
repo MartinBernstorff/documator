@@ -435,3 +435,198 @@ def test_logs_a_failing_block_where_it_arises(
 
     assert "note.md" in caplog.text
     assert "exit 3" in caplog.text
+
+
+def test_declared_variable_expands_in_a_later_command(tmp_path: Path) -> None:
+    build_tree(tmp_path, TreeLayout("in\nout"))
+    (tmp_path / "in" / "note.md").write_text("""```
+!var greet = echo hello
+```
+```
+!{{greet}} world
+```
+""")
+
+    assert _render(tmp_path / "in", tmp_path / "out") == 0
+
+    assert (tmp_path / "out" / "note.md").read_text() == snapshot("""\
+```
+hello world
+```
+""")
+
+
+def test_declaration_composes_an_earlier_variable(tmp_path: Path) -> None:
+    build_tree(tmp_path, TreeLayout("in\nout"))
+    (tmp_path / "in" / "note.md").write_text("""```
+!var base = echo
+```
+```
+!var greet = {{base}} hello
+```
+```
+!{{greet}}
+```
+""")
+
+    assert _render(tmp_path / "in", tmp_path / "out") == 0
+
+    assert (tmp_path / "out" / "note.md").read_text() == snapshot("""\
+```
+hello
+```
+""")
+
+
+def test_undefined_reference_hands_back_the_fence_without_running_it(
+    tmp_path: Path,
+) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              note.md | ```\\n!echo {{missing}}\\n```\\n
+            out
+        """),
+    )
+
+    assert _render(tmp_path / "in", tmp_path / "out") == 1
+
+    assert (tmp_path / "out" / "note.md").read_text() == snapshot("""\
+```
+!echo {{missing}}
+```
+
+[documator: undefined variable missing]
+""")
+
+
+def test_reference_before_its_declaration_is_undefined(tmp_path: Path) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              note.md | ```\\n!echo {{greet}}\\n```\\n```\\n!var greet = hi\\n```\\n
+            out
+        """),
+    )
+
+    assert _render(tmp_path / "in", tmp_path / "out") == 1
+
+    assert (tmp_path / "out" / "note.md").read_text() == snapshot("""\
+```
+!echo {{greet}}
+```
+
+[documator: undefined variable greet]
+""")
+
+
+def test_redeclaring_a_variable_fails_the_render(tmp_path: Path) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              note.md | ```\\n!var greet = one\\n```\\n```\\n!var greet = two\\n```\\n
+            out
+        """),
+    )
+
+    assert _render(tmp_path / "in", tmp_path / "out") == 1
+
+    assert (tmp_path / "out" / "note.md").read_text() == snapshot("""\
+```
+!var greet = two
+```
+
+[documator: variable greet is already declared]
+""")
+
+
+def test_declaration_without_a_value_fails_the_render(tmp_path: Path) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              note.md | ```\\n!var greet =\\n```\\n
+            out
+        """),
+    )
+
+    assert _render(tmp_path / "in", tmp_path / "out") == 1
+
+    assert (tmp_path / "out" / "note.md").read_text() == snapshot("""\
+```
+!var greet =
+```
+
+[documator: variable declaration has no value]
+""")
+
+
+def test_a_declaration_does_not_reach_into_a_transclusion(tmp_path: Path) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              note.md | ```\\n!var greet = echo hi\\n```\\n![[partial]]\\n
+              partial.md | ```\\n!{{greet}}\\n```\\n
+            out
+        """),
+    )
+
+    assert _render(tmp_path / "in", tmp_path / "out") == 1
+
+    assert (tmp_path / "out" / "note.md").read_text() == snapshot("""\
+```
+!{{greet}}
+```
+
+[documator: undefined variable greet]
+
+""")
+
+
+def test_a_declaration_inside_a_transclusion_does_not_leak_out(tmp_path: Path) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              note.md | ![[partial]]\\n```\\n!{{greet}}\\n```\\n
+              partial.md | ```\\n!var greet = echo hi\\n```\\n```\\n!{{greet}}\\n```\\n
+            out
+        """),
+    )
+
+    assert _render(tmp_path / "in", tmp_path / "out") == 1
+
+    assert (tmp_path / "out" / "note.md").read_text() == snapshot("""\
+```
+hi
+```
+
+```
+!{{greet}}
+```
+
+[documator: undefined variable greet]
+""")
+
+
+def test_go_template_in_a_command_survives_untouched(tmp_path: Path) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              note.md | ```\\n!echo '{{.Name}} {{ end }}'\\n```\\n
+            out
+        """),
+    )
+
+    assert _render(tmp_path / "in", tmp_path / "out") == 0
+
+    assert (tmp_path / "out" / "note.md").read_text() == snapshot("""\
+```
+{{.Name}} {{ end }}
+```
+""")

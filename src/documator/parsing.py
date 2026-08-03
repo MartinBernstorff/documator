@@ -7,6 +7,7 @@ from iterpy import Arr
 
 from documator.execution import Command
 from documator.transclusion import Reference
+from documator.variables import VariableName, VariableValue
 
 Markdown = NewType("Markdown", str)
 Line = NewType("Line", str)
@@ -33,14 +34,28 @@ class UnterminatedFence(StructuralError):
     message = "fenced block is never closed"
 
 
+class DeclarationWithoutValue(StructuralError):
+    message = "variable declaration has no value"
+
+
 @dataclass(frozen=True, slots=True)
 class PassthroughBlock:
     text: Markdown
 
 
+# A block that can fail keeps its source, because the failure is reported by handing the
+# author back what they wrote.
 @dataclass(frozen=True, slots=True)
 class ExecutableBlock:
+    text: Markdown
     command: Command
+
+
+@dataclass(frozen=True, slots=True)
+class DeclarationBlock:
+    text: Markdown
+    name: VariableName
+    value: VariableValue
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,7 +70,11 @@ class StructuralErrorBlock:
 
 
 type Block = (
-    PassthroughBlock | ExecutableBlock | TransclusionBlock | StructuralErrorBlock
+    PassthroughBlock
+    | ExecutableBlock
+    | DeclarationBlock
+    | TransclusionBlock
+    | StructuralErrorBlock
 )
 
 
@@ -162,7 +181,24 @@ def _classify(fence: list[Line]) -> Block:
         return StructuralErrorBlock(_joined(fence), MultipleCommands)
     if content.filter(lambda line: bool(line.strip())).len() > 1:
         return StructuralErrorBlock(_joined(fence), CommandWithOtherContent)
-    return ExecutableBlock(Command(commands[0].removeprefix("!").strip()))
+    return _command_or_declaration(
+        _joined(fence), commands[0].removeprefix("!").strip()
+    )
+
+
+# Only an `=` marks a declaration, so `var` stays available as a command of its own.
+def _command_or_declaration(text: Markdown, command: str) -> Block:
+    declaration = re.match(
+        r"var\s+(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*=(?P<value>.*)$", command
+    )
+    if declaration is None:
+        return ExecutableBlock(text, Command(command))
+    value = declaration["value"].strip()
+    if not value:
+        return StructuralErrorBlock(text, DeclarationWithoutValue)
+    return DeclarationBlock(
+        text, VariableName(declaration["name"]), VariableValue(value)
+    )
 
 
 def _joined(lines: list[Line]) -> Markdown:
