@@ -1,9 +1,8 @@
+import functools
 import logging
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
-
-from iterpy import Arr
 
 from documator.domain import (
     ExitCode,
@@ -13,9 +12,10 @@ from documator.domain import (
     TimeoutSeconds,
     WorkingDir,
 )
-from documator.execution import Annotation, execute_block, marker
+from documator.execution import Annotation, Command, execute_block, marker
 from documator.parsing import (
     Block,
+    DeclarationBlock,
     ExecutableBlock,
     Markdown,
     PassthroughBlock,
@@ -30,6 +30,13 @@ from documator.transclusion import (
     TransclusionFailure,
     Vault,
     resolve,
+)
+from documator.variables import (
+    Interpolable,
+    Scope,
+    Undefined,
+    VariableName,
+    VariableValue,
 )
 
 DEFAULT_TIMEOUT = TimeoutSeconds(10.0)
@@ -130,28 +137,65 @@ def worst(failures: list[Failure]) -> ExitCode:
     return ExitCode(max((failure.exit_code for failure in failures), default=0))
 
 
-def _render_block(block: Block, origin: Origin, timeout: TimeoutSeconds) -> Rendered:
+@dataclass(frozen=True, slots=True)
+class _Step:
+    rendered: Rendered
+    scope: Scope
+
+
+def _render_block(
+    block: Block, origin: Origin, timeout: TimeoutSeconds, scope: Scope
+) -> _Step:
     match block:
         case PassthroughBlock(text):
-            return Rendered(text, [])
-        case ExecutableBlock(command):
-            log.info("executing %s in %s", command, origin.note())
-            executed = execute_block(command, origin.working_dir(), timeout)
-            if executed.failure is None:
-                return Rendered(Markdown(executed.block), [])
-            log.error("%s in %s: %s", command, origin.note(), executed.failure)
-            return Rendered(
-                Markdown(executed.block), [Failure(executed.failure, ExitCode(1))]
-            )
+            return _Step(Rendered(text, []), scope)
+        case DeclarationBlock(text, name, value):
+            return _declare(text, name, value, origin, scope)
+        case ExecutableBlock(text, command):
+            return _Step(_execute(text, command, origin, timeout, scope), scope)
         case TransclusionBlock(reference):
-            return _render_transclusion(reference, origin, timeout)
+            return _Step(_render_transclusion(reference, origin, timeout), scope)
         case StructuralErrorBlock(text, reason):
-            failure = Annotation(reason.message)
-            log.error("%s in %s", failure, origin.note())
-            return Rendered(
-                Markdown(f"{text}\n{marker(failure)}\n"),
-                [Failure(failure, ExitCode(1))],
-            )
+            failure = _authoring_error(text, Annotation(reason.message), origin)
+            return _Step(failure, scope)
+
+
+def _declare(
+    text: Markdown,
+    name: VariableName,
+    value: VariableValue,
+    origin: Origin,
+    scope: Scope,
+) -> _Step:
+    declared = scope.declare(name, value)
+    if isinstance(declared, Scope):
+        return _Step(Rendered(Markdown(""), []), declared)
+    return _Step(_authoring_error(text, Annotation(str(declared)), origin), scope)
+
+
+def _execute(
+    text: Markdown,
+    command: Command,
+    origin: Origin,
+    timeout: TimeoutSeconds,
+    scope: Scope,
+) -> Rendered:
+    expanded = scope.expand(Interpolable(command))
+    if isinstance(expanded, Undefined):
+        return _authoring_error(text, Annotation(str(expanded)), origin)
+    # The expanded command is the one that ran, so it is the one worth reproducing.
+    resolved = Command(expanded)
+    log.info("executing %s in %s", resolved, origin.note())
+    executed = execute_block(resolved, origin.working_dir(), timeout)
+    if executed.failure is None:
+        return Rendered(Markdown(executed.block), [])
+    log.error("%s in %s: %s", resolved, origin.note(), executed.failure)
+    return Rendered(Markdown(executed.block), [Failure(executed.failure, ExitCode(1))])
+
+
+def _authoring_error(text: Markdown, note: Annotation, origin: Origin) -> Rendered:
+    log.error("%s in %s", note, origin.note())
+    return Rendered(Markdown(f"{text}\n{marker(note)}\n"), [Failure(note, ExitCode(1))])
 
 
 def _render_transclusion(
@@ -176,11 +220,32 @@ def _operational(failure: TransclusionFailure, origin: Origin) -> Rendered:
     return Rendered(Markdown(marker(note)), [Failure(note, ExitCode(2))])
 
 
+# Declarations make the walk stateful, so blocks fold rather than map: each one sees the
+# scope its predecessors left behind, and a fresh scope starts at every note.
+@dataclass(frozen=True, slots=True)
+class _Progress:
+    text: Markdown
+    failures: tuple[Failure, ...]
+    scope: Scope
+
+
 def render_markdown(
     source: Markdown, origin: Origin, timeout: TimeoutSeconds
 ) -> Rendered:
-    blocks = Arr(parse(source)).map(lambda block: _render_block(block, origin, timeout))
-    return Rendered(
-        Markdown("".join(blocks.map(lambda block: block.text))),
-        blocks.map(lambda block: Arr(block.failures)).flatten().to_list(),
+    walked = functools.reduce(
+        lambda progress, block: _advance(progress, block, origin, timeout),
+        parse(source),
+        _Progress(Markdown(""), (), Scope.empty()),
+    )
+    return Rendered(walked.text, list(walked.failures))
+
+
+def _advance(
+    progress: _Progress, block: Block, origin: Origin, timeout: TimeoutSeconds
+) -> _Progress:
+    step = _render_block(block, origin, timeout, progress.scope)
+    return _Progress(
+        Markdown(progress.text + step.rendered.text),
+        (*progress.failures, *step.rendered.failures),
+        step.scope,
     )
