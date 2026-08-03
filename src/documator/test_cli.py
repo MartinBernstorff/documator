@@ -1,3 +1,4 @@
+import re
 import signal
 import subprocess
 import sys
@@ -217,6 +218,34 @@ description: foo
 [documator: timed out after 0.3s]
 ```
 """)
+
+
+def test_log_lines_carry_a_timestamp(tmp_path: Path) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              note.md | hello\\n
+            out
+        """),
+    )
+
+    # The format only applies to the real handler, so drive the CLI out-of-process.
+    logged = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "documator",
+            "render",
+            str(tmp_path / "in"),
+            str(tmp_path / "out"),
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stderr
+
+    assert re.fullmatch(r"\d{2}:\d{2}:\d{2} rendered note\.md\n", logged)
 
 
 def test_watch_flag_keeps_rendering_after_the_first_pass(tmp_path: Path) -> None:
