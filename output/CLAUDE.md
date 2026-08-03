@@ -7,19 +7,29 @@ A documentation CLI. Python 3.14, packaged with `uv` (src layout), tasks orchest
 Always run tasks through **moon**, never the tool directly. This runs dependencies and caches aggressively. You can run via `moon run <task>`.
 
 ```
-╭──────────────────────────────────────────────────────────────────────────────╮
-│Task                       Command   Toolchains                               │
-│──────────────────────────────────────────────────────────────────────────────│
-│documator:docs             (script)  system                                   │
-│documator:format           (script)  system                                   │
-│documator:format-fix       (script)  system                                   │
-│documator:lint             (script)  system                                   │
-│documator:lint-fix         (script)  system                                   │
-│documator:modularity       (script)  system                                   │
-│documator:snapshot         (script)  system                                   │
-│documator:test             (script)  system                                   │
-│documator:typecheck        (script)  system                                   │
-╰──────────────────────────────────────────────────────────────────────────────╯
+[0m[m╭──────────────────────────────────────────────────────────────────────────────[K╮[0m
+[m│[m[1mTask                       Command   Type        Preset      Toolchains       [0m[m[K│[0m
+[m│                                                                              [K│[0m
+[m│                                                                              [K│[0m
+[m│                                                                              [K│[0m
+[m│                                                                              [K│[0m
+[m│                                                                              [K│[0m
+[m│                                                                              [K│[0m
+[m│                                                                              [K│[0m
+[m│                                                                              [K│[0m
+[m│                                                                              [K│[0m
+[m│                                                                              [K│[0m
+[m│──────────────────────────────────────────────────────────────────────────────[K│[0m
+[m│[mdocumator:docs             (script)  test                    system           [m[K│[0m
+[m│[m[mdocumator:format           (script)  test                    system           [m[m[K│[0m
+[m│[mdocumator:format-fix       (script)  run                     system           [m[K│[0m
+[m│[m[mdocumator:lint             (script)  test                    system           [m[m[K│[0m
+[m│[mdocumator:lint-fix         (script)  run                     system           [m[K│[0m
+[m│[m[mdocumator:modularity       (script)  test                    system           [m[m[K│[0m
+[m│[mdocumator:snapshot         (script)  run                     system           [m[K│[0m
+[m│[m[mdocumator:test             (script)  test                    system           [m[m[K│[0m
+[m│[mdocumator:typecheck        (script)  test                    system           [m[K│[0m
+[m╰──────────────────────────────────────────────────────────────────────────────[K╯[0m
 ```
 
 Run everything at once with `moon ci` — the same affected-only pass CI and the pre-commit hook run. Add `--force` to bypass affected detection and the cache and run every task.

@@ -69,6 +69,34 @@ class is whatever is decidable from the tree and the template source, before any
 `render` deliberately keeps its copy-everything walk and mirrors `.obsidian/` and
 `.DS_Store` into its output. The two walks are not meant to agree.
 
+## Commands
+
+A `!`-prefixed line inside a fence at column zero is a command: the whole fence is
+replaced by a fenced block holding the command's output.
+
+A command also works inline, in a code span, so a value can sit in the middle of a
+sentence — `` `!git rev-parse --short HEAD` `` becomes `` `a1b2c3d` ``. The span's
+delimiter may be any number of backticks, closed by a run of the same length on the same
+line, so a command containing a backtick is written with more of them. Everything after
+the `!` is the command; there is no info string to skip.
+
+Inline output is a code span too, widened past any backticks it contains. A code span
+cannot hold a line break, so output that spans several lines is promoted to an ordinary
+fence on its own line and the sentence resumes after it — write the fenced form directly
+when that is what you want. Output that is empty becomes
+`` `[documator: no output]` `` rather than an invisible hole, and a command that fails
+or times out carries its marker inside the backticks.
+
+`{{name}}` references expand in an inline command exactly as in a fenced one, against the
+same file-scoped bindings, so a `!var` declared in a fence is usable mid-sentence.
+An undefined reference hands the span's source back followed by its marker, keeping the
+failure on one line. A declaration itself has no inline form: `` `!var a = b` `` is a
+command named `var`, and fails as one.
+
+`!!` escapes in both forms, so `` `!!important` `` renders as `` `!important` ``. A span
+holding nothing but `!` is left alone, and a leading `![[` stays an embed rather than
+becoming a command.
+
 For the current options, run:
 
 ```

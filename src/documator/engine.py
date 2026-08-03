@@ -12,11 +12,20 @@ from documator.domain import (
     TimeoutSeconds,
     WorkingDir,
 )
-from documator.execution import Annotation, Command, execute_block, marker
+from documator.execution import (
+    Annotation,
+    Command,
+    OutputBlock,
+    OutputSpan,
+    execute_block,
+    execute_span,
+    marker,
+)
 from documator.parsing import (
     Block,
     DeclarationBlock,
     ExecutableBlock,
+    ExecutableSpan,
     Markdown,
     PassthroughBlock,
     StructuralErrorBlock,
@@ -153,6 +162,8 @@ def _render_block(
             return _declare(text, name, value, origin, scope)
         case ExecutableBlock(text, command):
             return _Step(_execute(text, command, origin, timeout, scope), scope)
+        case ExecutableSpan(text, command):
+            return _Step(_execute_span(text, command, origin, timeout, scope), scope)
         case TransclusionBlock(reference):
             return _Step(_render_transclusion(reference, origin, timeout), scope)
         case StructuralErrorBlock(text, reason):
@@ -180,22 +191,61 @@ def _execute(
     timeout: TimeoutSeconds,
     scope: Scope,
 ) -> Rendered:
-    expanded = scope.expand(Interpolable(command))
-    if isinstance(expanded, Undefined):
-        return _authoring_error(text, Annotation(str(expanded)), origin)
-    # The expanded command is the one that ran, so it is the one worth reproducing.
-    resolved = Command(expanded)
+    resolved = _expanded(command, scope)
+    if isinstance(resolved, Undefined):
+        return _authoring_error(text, Annotation(str(resolved)), origin)
     log.info("executing %s in %s", resolved, origin.note())
     executed = execute_block(resolved, origin.working_dir(), timeout)
-    if executed.failure is None:
-        return Rendered(Markdown(executed.block), [])
-    log.error("%s in %s: %s", resolved, origin.note(), executed.failure)
-    return Rendered(Markdown(executed.block), [Failure(executed.failure, ExitCode(1))])
+    return _reported(executed.block, executed.failure, resolved, origin)
+
+
+def _execute_span(
+    text: Markdown,
+    command: Command,
+    origin: Origin,
+    timeout: TimeoutSeconds,
+    scope: Scope,
+) -> Rendered:
+    resolved = _expanded(command, scope)
+    if isinstance(resolved, Undefined):
+        return _inline_authoring_error(text, Annotation(str(resolved)), origin)
+    log.info("executing %s in %s", resolved, origin.note())
+    executed = execute_span(resolved, origin.working_dir(), timeout)
+    return _reported(executed.span, executed.failure, resolved, origin)
+
+
+def _expanded(command: Command, scope: Scope) -> Command | Undefined:
+    expanded = scope.expand(Interpolable(command))
+    if isinstance(expanded, Undefined):
+        return expanded
+    # The expanded command is the one that ran, so it is the one worth reproducing.
+    return Command(expanded)
 
 
 def _authoring_error(text: Markdown, note: Annotation, origin: Origin) -> Rendered:
     log.error("%s in %s", note, origin.note())
     return Rendered(Markdown(f"{text}\n{marker(note)}\n"), [Failure(note, ExitCode(1))])
+
+
+# The echoed source is already a span, so the marker follows it rather than breaking the
+# sentence the command sat in.
+def _inline_authoring_error(
+    text: Markdown, note: Annotation, origin: Origin
+) -> Rendered:
+    log.error("%s in %s", note, origin.note())
+    return Rendered(Markdown(f"{text} {marker(note)}"), [Failure(note, ExitCode(1))])
+
+
+def _reported(
+    text: OutputBlock | OutputSpan,
+    failure: Annotation | None,
+    command: Command,
+    origin: Origin,
+) -> Rendered:
+    if failure is None:
+        return Rendered(Markdown(text), [])
+    log.error("%s in %s: %s", command, origin.note(), failure)
+    return Rendered(Markdown(text), [Failure(failure, ExitCode(1))])
 
 
 def _render_transclusion(

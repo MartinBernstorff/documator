@@ -246,6 +246,85 @@ def test_executable_block_is_replaced_by_its_output(tmp_path: Path) -> None:
     )
 
 
+def test_executable_span_is_replaced_inside_its_sentence(tmp_path: Path) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              note.md | The answer is `!echo 42` today.\\n
+            out
+        """),
+    )
+
+    assert _render(tmp_path / "in", tmp_path / "out") == 0
+
+    assert (tmp_path / "out" / "note.md").read_text() == snapshot(
+        "The answer is `42` today.\n"
+    )
+
+
+def test_failing_span_fails_the_run_and_keeps_rendering(tmp_path: Path) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              a.md | value `!exit 3` here\\n
+              b.md | value `!echo ok` here\\n
+            out
+        """),
+    )
+
+    assert _render(tmp_path / "in", tmp_path / "out") == 1
+
+    assert (tmp_path / "out" / "a.md").read_text() == snapshot(
+        "value `[documator: exit 3]` here\n"
+    )
+    assert (tmp_path / "out" / "b.md").read_text() == snapshot("value `ok` here\n")
+
+
+def test_span_with_multi_line_output_becomes_a_fence_in_the_document(
+    tmp_path: Path,
+) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              note.md | Lines:`!echo a; echo b` done.\\n
+            out
+        """),
+    )
+
+    assert _render(tmp_path / "in", tmp_path / "out") == 0
+
+    assert (tmp_path / "out" / "note.md").read_text() == snapshot("""\
+Lines:
+```
+a
+b
+```
+ done.
+""")
+
+
+def test_span_runs_beside_its_own_file(tmp_path: Path) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              sub
+                note.md | says `!cat sibling.txt`\\n
+                sibling.txt | neighbour\\n
+            out
+        """),
+    )
+
+    assert _render(tmp_path / "in", tmp_path / "out") == 0
+
+    assert (tmp_path / "out" / "sub" / "note.md").read_text() == snapshot(
+        "says `neighbour`\n"
+    )
+
+
 def test_block_runs_beside_its_own_file(tmp_path: Path) -> None:
     build_tree(
         tmp_path,
@@ -476,6 +555,51 @@ def test_declaration_composes_an_earlier_variable(tmp_path: Path) -> None:
 hello
 ```
 """)
+
+
+def test_declared_variable_expands_in_a_later_span(tmp_path: Path) -> None:
+    build_tree(tmp_path, TreeLayout("in\nout"))
+    (tmp_path / "in" / "note.md").write_text("""```
+!var greet = echo hello
+```
+It says `!{{greet}} world` here.
+""")
+
+    assert _render(tmp_path / "in", tmp_path / "out") == 0
+
+    assert (tmp_path / "out" / "note.md").read_text() == snapshot(
+        "It says `hello world` here.\n"
+    )
+
+
+def test_undefined_reference_in_a_span_hands_back_its_source_on_one_line(
+    tmp_path: Path,
+) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              note.md | It says `!echo {{missing}}` here.\\n
+            out
+        """),
+    )
+
+    assert _render(tmp_path / "in", tmp_path / "out") == 1
+
+    assert (tmp_path / "out" / "note.md").read_text() == snapshot(
+        "It says `!echo {{missing}}` [documator: undefined variable missing] here.\n"
+    )
+
+
+def test_var_in_a_span_is_a_command_not_a_declaration(tmp_path: Path) -> None:
+    build_tree(tmp_path, TreeLayout("in\nout"))
+    (tmp_path / "in" / "note.md").write_text("""Declared `!var greet = hi` inline.
+Used `!echo {{greet}}` after.
+""")
+
+    assert _render(tmp_path / "in", tmp_path / "out") == 1
+
+    assert "undefined variable greet" in (tmp_path / "out" / "note.md").read_text()
 
 
 def test_undefined_reference_hands_back_the_fence_without_running_it(
