@@ -12,7 +12,9 @@ from documator.variables import VariableName, VariableValue
 Markdown = NewType("Markdown", str)
 Line = NewType("Line", str)
 LineIndex = NewType("LineIndex", int)
+TokenIndex = NewType("TokenIndex", int)
 Delimiter = NewType("Delimiter", str)
+SpanContent = NewType("SpanContent", str)
 
 
 class StructuralError(ValueError):
@@ -58,6 +60,13 @@ class DeclarationBlock:
     value: VariableValue
 
 
+# Carries its source for the same reason a fenced command does.
+@dataclass(frozen=True, slots=True)
+class ExecutableSpan:
+    text: Markdown
+    command: Command
+
+
 @dataclass(frozen=True, slots=True)
 class TransclusionBlock:
     reference: Reference
@@ -73,6 +82,7 @@ type Block = (
     PassthroughBlock
     | ExecutableBlock
     | DeclarationBlock
+    | ExecutableSpan
     | TransclusionBlock
     | StructuralErrorBlock
 )
@@ -102,7 +112,9 @@ def _segments(lines: list[Line]) -> Iterator[_Segment]:
     index = LineIndex(0)
     while index < len(lines):
         delimiter = _opening_delimiter(lines[index])
-        if delimiter is None:
+        # A delimiter that closes its own bang span on this line is a span, not a fence
+        # that happens to never close.
+        if delimiter is None or _opens_a_bang_span(lines[index]):
             prose.append(lines[index])
             index = LineIndex(index + 1)
             continue
@@ -119,10 +131,102 @@ def _segments(lines: list[Line]) -> Iterator[_Segment]:
 
 def _to_blocks(segment: _Segment) -> list[Block]:
     if isinstance(segment, _Prose):
-        return _split_embeds(_joined(segment.lines))
+        return _split_prose(_joined(segment.lines))
     if not segment.closed:
         return [StructuralErrorBlock(_joined(segment.lines), UnterminatedFence)]
     return [_classify(segment.lines)]
+
+
+@dataclass(frozen=True, slots=True)
+class _Span:
+    content: SpanContent
+    text: Markdown
+    after: TokenIndex
+
+
+# Spans are found before embeds, so a command's content reaches the shell intact.
+def _split_prose(prose: Markdown) -> list[Block]:
+    return Arr(_pieces(prose)).map(_piece_to_blocks).flatten().to_list()
+
+
+def _piece_to_blocks(piece: Markdown | ExecutableSpan) -> list[Block]:
+    if isinstance(piece, ExecutableSpan):
+        return [piece]
+    return _split_embeds(piece)
+
+
+def _pieces(prose: Markdown) -> Iterator[Markdown | ExecutableSpan]:
+    tokens = _tokens(prose)
+    literal: list[str] = []
+    index = TokenIndex(0)
+    while index < len(tokens):
+        span = _closed_span(tokens, index)
+        command = None if span is None else _spanned_command(span.content)
+        if span is None or command is None:
+            literal.append(tokens[index] if span is None else _unescaped(span))
+            index = TokenIndex(index + 1) if span is None else span.after
+            continue
+        if literal:
+            yield Markdown("".join(literal))
+            literal = []
+        yield ExecutableSpan(span.text, command)
+        index = span.after
+    if literal:
+        yield Markdown("".join(literal))
+
+
+# Maximal runs, so a delimiter can be compared to a closing run by equality.
+def _tokens(prose: Markdown) -> list[str]:
+    return re.findall(r"`+|[^`]+", prose)
+
+
+def _closed_span(tokens: list[str], opened_at: TokenIndex) -> _Span | None:
+    delimiter = tokens[opened_at]
+    if not delimiter.startswith("`"):
+        return None
+    closings = (
+        TokenIndex(offset)
+        for offset in range(opened_at + 1, len(tokens))
+        if tokens[offset] == delimiter
+    )
+    closed_at = next(closings, None)
+    if closed_at is None:
+        return None
+    content = SpanContent("".join(tokens[opened_at + 1 : closed_at]))
+    if "\n" in content:
+        return None
+    return _Span(
+        content,
+        Markdown("".join(tokens[opened_at : closed_at + 1])),
+        TokenIndex(closed_at + 1),
+    )
+
+
+def _spanned_command(content: SpanContent) -> Command | None:
+    # A leading `![[` is the embed sigil, so it stays a transclusion rather than
+    # becoming a command that shells out to `[[Note]]`.
+    if not _is_bang_span(content) or content.startswith(("!!", "![[")):
+        return None
+    command = content.removeprefix("!").strip()
+    return Command(command) if command else None
+
+
+def _is_bang_span(content: SpanContent) -> bool:
+    return content.startswith("!")
+
+
+def _unescaped(span: _Span) -> str:
+    if not span.content.startswith("!!"):
+        return span.text
+    # The delimiter is backticks only, so the first bang in the text is the escape.
+    return span.text.replace("!", "", 1)
+
+
+# Scoped to the leading run: a span later on the line is part of a fence's info string,
+# and demoting that whole fence to prose would execute its body.
+def _opens_a_bang_span(line: Line) -> bool:
+    span = _closed_span(_tokens(Markdown(line)), TokenIndex(0))
+    return span is not None and _is_bang_span(span.content)
 
 
 # Only prose is split: inside a fence an embed is code being quoted, not a transclusion.

@@ -4,6 +4,7 @@ from documator.parsing import (
     DeclarationBlock,
     DeclarationWithoutValue,
     ExecutableBlock,
+    ExecutableSpan,
     Markdown,
     MultipleCommands,
     PassthroughBlock,
@@ -252,4 +253,107 @@ prose
 """)
     assert parse(source) == [
         StructuralErrorBlock(Markdown(source), CommandWithOtherContent)
+    ]
+
+
+def test_span_in_prose_splits_into_an_executable_span() -> None:
+    assert parse(Markdown("before `!echo hi` after\n")) == [
+        PassthroughBlock(Markdown("before ")),
+        ExecutableSpan(Markdown("`!echo hi`"), Command("echo hi")),
+        PassthroughBlock(Markdown(" after\n")),
+    ]
+
+
+def test_span_delimiter_is_closed_by_a_run_of_the_same_length() -> None:
+    assert parse(Markdown("a ``!echo `x`` b\n")) == [
+        PassthroughBlock(Markdown("a ")),
+        ExecutableSpan(Markdown("``!echo `x``"), Command("echo `x")),
+        PassthroughBlock(Markdown(" b\n")),
+    ]
+
+
+def test_one_line_triple_backtick_span_beats_an_unterminated_fence() -> None:
+    assert parse(Markdown("```!echo hi```\n")) == [
+        ExecutableSpan(Markdown("```!echo hi```"), Command("echo hi")),
+        PassthroughBlock(Markdown("\n")),
+    ]
+
+
+def test_one_line_triple_backtick_span_escapes_its_bang() -> None:
+    assert parse(Markdown("```!!echo hi```\n")) == [
+        PassthroughBlock(Markdown("```!echo hi```\n"))
+    ]
+
+
+def test_span_in_a_fence_info_string_does_not_demote_the_fence() -> None:
+    source = Markdown("""```text `!echo hi`
+body `!echo boom`
+```
+""")
+    assert parse(source) == [PassthroughBlock(source)]
+
+
+def test_one_line_backtick_pair_without_a_command_stays_a_fence() -> None:
+    source = Markdown("``` ```\n")
+    assert parse(source) == [StructuralErrorBlock(source, UnterminatedFence)]
+
+
+def test_span_inside_a_fence_is_not_executable() -> None:
+    source = Markdown("""```python
+value = `!echo hi`
+```
+""")
+    assert parse(source) == [PassthroughBlock(source)]
+
+
+def test_span_does_not_cross_a_line_break() -> None:
+    source = Markdown("`!echo\nhi`\n")
+    assert parse(source) == [PassthroughBlock(source)]
+
+
+def test_unclosed_span_is_not_executable() -> None:
+    source = Markdown("`!echo hi\n")
+    assert parse(source) == [PassthroughBlock(source)]
+
+
+def test_double_bang_span_escapes_to_a_literal_bang_and_does_not_execute() -> None:
+    assert parse(Markdown("see `!!important` here\n")) == [
+        PassthroughBlock(Markdown("see `!important` here\n"))
+    ]
+
+
+def test_span_holding_only_a_bang_is_not_executable() -> None:
+    source = Markdown("`!` and `!  `\n")
+    assert parse(source) == [PassthroughBlock(source)]
+
+
+def test_span_in_an_indented_list_item_is_executable() -> None:
+    assert parse(Markdown("  - version `!echo 1`\n")) == [
+        PassthroughBlock(Markdown("  - version ")),
+        ExecutableSpan(Markdown("`!echo 1`"), Command("echo 1")),
+        PassthroughBlock(Markdown("\n")),
+    ]
+
+
+def test_embed_inside_an_executable_span_stays_part_of_the_command() -> None:
+    assert parse(Markdown("`!echo ![[Note]]`\n")) == [
+        ExecutableSpan(Markdown("`!echo ![[Note]]`"), Command("echo ![[Note]]")),
+        PassthroughBlock(Markdown("\n")),
+    ]
+
+
+def test_embed_inside_a_non_executable_span_is_still_a_transclusion() -> None:
+    assert parse(Markdown("`![[Note]]`\n")) == [
+        PassthroughBlock(Markdown("`")),
+        TransclusionBlock(Reference("Note")),
+        PassthroughBlock(Markdown("`\n")),
+    ]
+
+
+def test_several_spans_on_one_line_are_classified_independently() -> None:
+    assert parse(Markdown("`!echo one` and `!echo two`\n")) == [
+        ExecutableSpan(Markdown("`!echo one`"), Command("echo one")),
+        PassthroughBlock(Markdown(" and ")),
+        ExecutableSpan(Markdown("`!echo two`"), Command("echo two")),
+        PassthroughBlock(Markdown("\n")),
     ]

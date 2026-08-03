@@ -4,7 +4,7 @@ from pathlib import Path
 from inline_snapshot import snapshot
 
 from documator.domain import TimeoutSeconds, WorkingDir
-from documator.execution import Command, execute_block
+from documator.execution import Command, execute_block, execute_span
 
 
 def test_captures_stdout_in_a_plain_fence() -> None:
@@ -268,3 +268,143 @@ def test_renders_empty_output_as_an_empty_fence() -> None:
 ```
 ```
 """)
+
+
+def test_captures_one_line_of_output_in_a_span() -> None:
+    output = execute_span(
+        Command("echo hello"), WorkingDir(Path.cwd()), TimeoutSeconds(10)
+    )
+
+    assert output.span == snapshot("`hello`")
+
+
+def test_strips_blank_lines_around_a_single_line_of_span_output() -> None:
+    output = execute_span(
+        Command("printf '\\n\\nhello\\n\\n'"),
+        WorkingDir(Path.cwd()),
+        TimeoutSeconds(10),
+    )
+
+    assert output.span == snapshot("`hello`")
+
+
+def test_marks_empty_span_output_so_it_leaves_no_hole() -> None:
+    output = execute_span(Command("true"), WorkingDir(Path.cwd()), TimeoutSeconds(10))
+
+    assert output.span == snapshot("`[documator: no output]`")
+
+
+def test_marks_a_failing_span_inside_its_backticks() -> None:
+    output = execute_span(
+        Command("echo partial; exit 3"), WorkingDir(Path.cwd()), TimeoutSeconds(10)
+    )
+
+    assert output.span == snapshot("`partial [documator: exit 3]`")
+
+
+def test_marks_a_failing_span_without_output_as_the_marker_alone() -> None:
+    output = execute_span(Command("false"), WorkingDir(Path.cwd()), TimeoutSeconds(10))
+
+    assert output.span == snapshot("`[documator: exit 1]`")
+
+
+def test_marks_a_span_that_times_out() -> None:
+    output = execute_span(
+        Command("sleep 5"), WorkingDir(Path.cwd()), TimeoutSeconds(0.1)
+    )
+
+    assert output.span == snapshot("`[documator: timed out after 0.1s]`")
+
+
+def test_promotes_multi_line_span_output_to_a_fence() -> None:
+    output = execute_span(
+        Command("printf 'a\\nb\\n'"), WorkingDir(Path.cwd()), TimeoutSeconds(10)
+    )
+
+    assert output.span == snapshot("""\
+
+```
+a
+b
+```
+""")
+
+
+def test_a_promoted_fence_carries_the_failure_marker_inside_it() -> None:
+    output = execute_span(
+        Command("printf 'a\\nb\\n'; exit 3"),
+        WorkingDir(Path.cwd()),
+        TimeoutSeconds(10),
+    )
+
+    assert output.span == snapshot("""\
+
+```
+a
+b
+[documator: exit 3]
+```
+""")
+
+
+def test_lengthens_the_span_delimiter_past_backticks_in_the_output() -> None:
+    output = execute_span(
+        Command("printf 'a``b'"), WorkingDir(Path.cwd()), TimeoutSeconds(10)
+    )
+
+    assert output.span == snapshot("```a``b```")
+
+
+def test_pads_span_output_that_touches_a_backtick() -> None:
+    output = execute_span(
+        Command("printf '`x`'"), WorkingDir(Path.cwd()), TimeoutSeconds(10)
+    )
+
+    assert output.span == snapshot("`` `x` ``")
+
+
+def test_reports_a_failing_span_as_a_failure() -> None:
+    assert execute_span(
+        Command("exit 3"), WorkingDir(Path.cwd()), TimeoutSeconds(10)
+    ).failure == snapshot("exit 3")
+
+
+def test_span_output_forging_the_annotation_is_not_reported_as_a_failure() -> None:
+    forged = execute_span(
+        Command("echo '[documator: exit 1]'"),
+        WorkingDir(Path.cwd()),
+        TimeoutSeconds(10),
+    )
+
+    assert forged.failure is None
+
+
+# A snapshot would carry the zero-width spaces invisibly, so assert the absence that
+# is the whole point of the guard.
+def test_neutralizes_wiki_links_in_span_output() -> None:
+    output = execute_span(
+        Command("echo '[[Other]]'"), WorkingDir(Path.cwd()), TimeoutSeconds(10)
+    )
+
+    assert "[[" not in output.span
+    assert "]]" not in output.span
+    assert "Other" in output.span
+
+
+def test_neutralizes_tags_in_span_output() -> None:
+    output = execute_span(
+        Command("echo 'see #alpha'"), WorkingDir(Path.cwd()), TimeoutSeconds(10)
+    )
+
+    assert "#alpha" not in output.span
+    assert "alpha" in output.span
+
+
+def test_runs_a_span_in_the_given_working_directory(tmp_path: Path) -> None:
+    (tmp_path / "sibling.txt").write_text("neighbour\n", encoding="utf-8")
+
+    output = execute_span(
+        Command("cat sibling.txt"), WorkingDir(tmp_path), TimeoutSeconds(10)
+    )
+
+    assert output.span == snapshot("`neighbour`")

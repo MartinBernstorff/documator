@@ -11,6 +11,7 @@ from documator.domain import ExitCode, TimeoutSeconds, WorkingDir
 Command = NewType("Command", str)
 CapturedOutput = NewType("CapturedOutput", str)
 OutputBlock = NewType("OutputBlock", str)
+OutputSpan = NewType("OutputSpan", str)
 Annotation = NewType("Annotation", str)
 # Anything the run writes into the reader's vault, where `[[` and `#` are live syntax.
 Emitted = NewType("Emitted", str)
@@ -30,11 +31,24 @@ class ExecutedBlock:
     failure: Annotation | None
 
 
+@dataclass(frozen=True, slots=True)
+class ExecutedSpan:
+    span: OutputSpan
+    failure: Annotation | None
+
+
 def execute_block(
     command: Command, working_dir: WorkingDir, timeout: TimeoutSeconds
 ) -> ExecutedBlock:
     capture = _capture(command, working_dir, timeout)
     return ExecutedBlock(_fenced(_annotated_body(capture)), capture.failure)
+
+
+def execute_span(
+    command: Command, working_dir: WorkingDir, timeout: TimeoutSeconds
+) -> ExecutedSpan:
+    capture = _capture(command, working_dir, timeout)
+    return ExecutedSpan(_inline_or_promoted(capture), capture.failure)
 
 
 def marker(note: Annotation) -> str:
@@ -92,6 +106,30 @@ def neutralized(text: Emitted) -> Emitted:
         r"\[\[|\]\]", lambda pair: f"{pair.group()[0]}\u200b{pair.group()[1]}", text
     )
     return Emitted(re.sub(r"(?<!\w)#(?=[\w/])", "#\u200b", unlinked))
+
+
+# A code span cannot hold a line break, so multi-line output leaves the sentence and
+# becomes an ordinary fence on its own line instead.
+def _inline_or_promoted(capture: _Capture) -> OutputSpan:
+    if "\n" in capture.output.strip():
+        return OutputSpan(f"\n{_fenced(_annotated_body(capture))}")
+    return _spanned(_annotated_inline(capture))
+
+
+def _annotated_inline(capture: _Capture) -> CapturedOutput:
+    output = CapturedOutput(neutralized(Emitted(capture.output.strip())))
+    if capture.failure is not None:
+        return CapturedOutput(f"{output} {marker(capture.failure)}".lstrip())
+    if not output:
+        return CapturedOutput(marker(Annotation("no output")))
+    return output
+
+
+def _spanned(output: CapturedOutput) -> OutputSpan:
+    delimiter = "`" * (_longest_backtick_run(output) + 1)
+    # Unpadded, a body touching a backtick merges into the delimiter and loses one.
+    padding = " " if output.startswith("`") or output.endswith("`") else ""
+    return OutputSpan(f"{delimiter}{padding}{output}{padding}{delimiter}")
 
 
 def _fenced(output: CapturedOutput) -> OutputBlock:
