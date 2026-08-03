@@ -56,7 +56,12 @@ def skills(
 
 
 def main(argv: list[str] | None = None) -> int:
-    logging.basicConfig(level=logging.INFO, format="%(message)s")
+    logging.basicConfig(
+        level=logging.INFO,
+        # WARNING is the widest level we emit; padding keeps the messages aligned.
+        format="%(asctime)s %(levelname)-7s %(message)s",
+        datefmt="%H:%M:%S",
+    )
     command = typer.main.get_command(app)
     # Standalone mode makes click print its own usage errors, but it exits rather
     # than returning, so the code comes back as a SystemExit.
