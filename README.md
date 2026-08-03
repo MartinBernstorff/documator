@@ -46,6 +46,26 @@ path. Any other loose file is ignored rather than an error — the flat layout g
 destination — and logged: `warning` for an ordinary file, `info` for a `.`/`_` path. To
 get a file bundled, move it into a `SKILL.md` folder.
 
+Malformed input compiles what compiles. A **structural** failure skips only its own
+skill — every other skill in the run still compiles, the failing skill's
+previously-compiled copy is pruned, and the reasons aggregate into a
+`documator-errors.md` at the output root, which itself disappears on the next clean run.
+Any structural failure exits 1; 2 stays reserved for the run being impossible. The
+class is whatever is decidable from the tree and the template source, before any
+`!command` block runs:
+
+- a stem that is not already `^[a-z0-9]+(-[a-z0-9]+)*$` and ≤64 chars — names are
+  validated, never normalised, because renaming a public identifier is a breaking change
+  at a distance;
+- a name claimed twice. One global namespace spans both template forms, so `foo.md`
+  beside `foo/SKILL.md` collides; neither side is emitted and the error names both paths;
+- an empty template — frontmatter and whitespace stripped leaves nothing. Measured on the
+  source, so an empty `SKILL.md` fails even when its folder bundles files, and a body that
+  merely *renders* empty stays a content failure;
+- a `name` key in template frontmatter, even one that matches the derived name, or an
+  explicitly empty `description:`;
+- a template that cannot be read or decoded.
+
 `render` deliberately keeps its copy-everything walk and mirrors `.obsidian/` and
 `.DS_Store` into its output. The two walks are not meant to agree.
 

@@ -30,18 +30,29 @@ def split(source: Markdown) -> Template:
     return Template(tuple(declared), Markdown(source[block.end() :]))
 
 
+def declares_name(declared: tuple[DeclaredLine, ...]) -> bool:
+    return Arr(declared).any(lambda line: _opens(line, "name"))
+
+
+# A present key is intent to fill it, so quotes around nothing count as empty too.
+def declares_empty_description(declared: tuple[DeclaredLine, ...]) -> bool:
+    return Arr(declared).any(
+        lambda line: (
+            re.fullmatch(
+                r"""description[ \t]*:[ \t]*('[ \t]*'|"[ \t]*")?[ \t]*""", line
+            )
+            is not None
+        )
+    )
+
+
 def compose(
     name: SkillName, declared: tuple[DeclaredLine, ...], body: Markdown
 ) -> Markdown:
-    # A declared name would land second in the block and win under YAML's last-key rule,
-    # so it is dropped rather than passed through: the stem is the name, always.
-    passed_through = (
-        Arr(declared).filter(lambda line: not _opens(line, "name")).to_list()
-    )
     described = (
-        passed_through
-        if Arr(passed_through).any(lambda line: _opens(line, "description"))
-        else [DeclaredLine(f"description: {name}"), *passed_through]
+        list(declared)
+        if Arr(declared).any(lambda line: _opens(line, "description"))
+        else [DeclaredLine(f"description: {name}"), *declared]
     )
     lines = Arr([DeclaredLine(f"name: {name}"), *described]).map(
         lambda line: line + "\n"

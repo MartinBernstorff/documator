@@ -12,6 +12,8 @@ Command = NewType("Command", str)
 CapturedOutput = NewType("CapturedOutput", str)
 OutputBlock = NewType("OutputBlock", str)
 Annotation = NewType("Annotation", str)
+# Anything the run writes into the reader's vault, where `[[` and `#` are live syntax.
+Emitted = NewType("Emitted", str)
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,19 +79,19 @@ def _killed(process: subprocess.Popen[str]) -> CapturedOutput:
 
 
 def _annotated_body(capture: _Capture) -> CapturedOutput:
-    output = _neutralized(_trimmed(capture.output))
+    output = CapturedOutput(neutralized(Emitted(_trimmed(capture.output))))
     if capture.failure is None:
         return output
     return CapturedOutput(f"{output}\n{marker(capture.failure)}".lstrip("\n"))
 
 
-# Output lands in the reader's vault, so a zero-width space strips its power to
-# create links or tags while leaving it looking exactly as the command wrote it.
-def _neutralized(output: CapturedOutput) -> CapturedOutput:
+# A zero-width space strips `[[` and `#` of their power to create links or tags, while
+# leaving them looking exactly as whatever produced them wrote them.
+def neutralized(text: Emitted) -> Emitted:
     unlinked = re.sub(
-        r"\[\[|\]\]", lambda pair: f"{pair.group()[0]}\u200b{pair.group()[1]}", output
+        r"\[\[|\]\]", lambda pair: f"{pair.group()[0]}\u200b{pair.group()[1]}", text
     )
-    return CapturedOutput(re.sub(r"(?<!\w)#(?=[\w/])", "#\u200b", unlinked))
+    return Emitted(re.sub(r"(?<!\w)#(?=[\w/])", "#\u200b", unlinked))
 
 
 def _fenced(output: CapturedOutput) -> OutputBlock:

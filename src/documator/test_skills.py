@@ -14,6 +14,10 @@ def _skills(input_dir: Path, output_dir: Path) -> int:
     return skills(InputDir(input_dir), OutputDir(output_dir), TimeoutSeconds(10.0))
 
 
+def _emitted(output_dir: Path) -> list[str]:
+    return sorted(str(path.relative_to(output_dir)) for path in output_dir.rglob("*"))
+
+
 def test_nesting_never_appears_in_the_name_or_the_output_path(tmp_path: Path) -> None:
     build_tree(
         tmp_path,
@@ -67,9 +71,9 @@ def test_transclusions_inline(tmp_path: Path) -> None:
         tmp_path,
         TreeLayout("""
             in
-              foo.md | before ![[Shared]] after\\n
+              foo.md | before ![[shared]] after\\n
               parts
-                Shared.md | inlined
+                shared.md | inlined
             out
         """),
     )
@@ -139,8 +143,8 @@ def test_frontmatter_is_not_inherited_from_a_transclusion(tmp_path: Path) -> Non
         tmp_path,
         TreeLayout("""
             in
-              foo.md | ![[Shared]]
-              Shared.md | ---\\ndescription: inherited\\n---\\nshared body\\n
+              foo.md | ![[shared]]
+              shared.md | ---\\ndescription: inherited\\n---\\nshared body\\n
             out
         """),
     )
@@ -669,6 +673,300 @@ def test_identical_input_and_output_leaves_the_tree_untouched(
 
     assert ConflictReason.IDENTICAL in caplog.text
     assert_tree(tmp_path / "in", TreeLayout("foo.md | # Foo\\n"))
+
+
+def test_an_invalid_name_skips_only_its_own_skill(tmp_path: Path) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              Foo.md | # Foo\\n
+              bar.md | # Bar\\n
+            out
+        """),
+    )
+
+    assert _skills(tmp_path / "in", tmp_path / "out") == 1
+
+    assert _emitted(tmp_path / "out") == snapshot(
+        ["bar", "bar/SKILL.md", "documator-errors.md"]
+    )
+    assert (tmp_path / "out" / "bar" / "SKILL.md").read_text() == snapshot("""\
+---
+name: bar
+description: bar
+---
+# Bar
+""")
+
+
+def test_a_previously_compiled_copy_of_a_failing_skill_is_pruned(
+    tmp_path: Path,
+) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              foo.md | ---\\ndescription: real\\n---\\n\\n
+            out
+              foo
+                SKILL.md | stale\\n
+        """),
+    )
+
+    assert _skills(tmp_path / "in", tmp_path / "out") == 1
+
+    assert not (tmp_path / "out" / "foo").exists()
+
+
+def test_a_collision_emits_neither_side_and_names_both_paths(tmp_path: Path) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              a
+                foo.md | # From a\\n
+              b
+                foo
+                  SKILL.md | # From b\\n
+            out
+        """),
+    )
+
+    assert _skills(tmp_path / "in", tmp_path / "out") == 1
+
+    assert (tmp_path / "out" / "documator-errors.md").read_text() == snapshot("""\
+# documator errors
+
+- the name "foo" is claimed by a/foo.md and b/foo/SKILL.md
+""")
+    assert not (tmp_path / "out" / "foo").exists()
+
+
+def test_a_collision_is_decided_before_any_command_block_runs(tmp_path: Path) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              a
+                foo.md | ```\\n!touch ../../ran\\n```\\n
+              b
+                foo.md | # From b\\n
+            out
+        """),
+    )
+
+    assert _skills(tmp_path / "in", tmp_path / "out") == 1
+
+    assert not (tmp_path / "ran").exists()
+
+
+def test_an_invalid_name_is_decided_before_any_command_block_runs(
+    tmp_path: Path,
+) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              Foo.md | ```\\n!touch ../ran\\n```\\n
+            out
+        """),
+    )
+
+    assert _skills(tmp_path / "in", tmp_path / "out") == 1
+
+    assert not (tmp_path / "ran").exists()
+
+
+def test_the_errors_file_is_pruned_by_a_later_clean_run(tmp_path: Path) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              Foo.md | # Foo\\n
+            out
+        """),
+    )
+
+    assert _skills(tmp_path / "in", tmp_path / "out") == 1
+    (tmp_path / "in" / "Foo.md").rename(tmp_path / "in" / "foo.md")
+
+    assert _skills(tmp_path / "in", tmp_path / "out") == 0
+
+    assert_tree(
+        tmp_path / "out",
+        TreeLayout("""
+            foo
+              SKILL.md | ---\\nname: foo\\ndescription: foo\\n---\\n# Foo\\n
+        """),
+    )
+
+
+def test_an_empty_skill_md_fails_even_when_the_folder_bundles_files(
+    tmp_path: Path,
+) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              foo
+                SKILL.md | \\n
+                references
+                  spec.md | # Spec\\n
+            out
+        """),
+    )
+
+    assert _skills(tmp_path / "in", tmp_path / "out") == 1
+
+    assert _emitted(tmp_path / "out") == snapshot(["documator-errors.md"])
+
+
+def test_a_body_that_renders_to_nothing_is_not_a_structural_failure(
+    tmp_path: Path,
+) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              foo.md | ```\\n!true\\n```\\n
+            out
+        """),
+    )
+
+    assert _skills(tmp_path / "in", tmp_path / "out") == 0
+
+    assert (tmp_path / "out" / "foo" / "SKILL.md").read_text() == snapshot("""\
+---
+name: foo
+description: foo
+---
+```
+```
+""")
+
+
+def test_a_declared_name_fails_even_when_it_matches_the_derived_one(
+    tmp_path: Path,
+) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              foo.md | ---\\nname: foo\\n---\\n# Foo\\n
+            out
+        """),
+    )
+
+    assert _skills(tmp_path / "in", tmp_path / "out") == 1
+
+    assert (tmp_path / "out" / "documator-errors.md").read_text() == snapshot("""\
+# documator errors
+
+- foo.md (foo): the template declares name, which the compiler sets
+""")
+
+
+def test_an_explicitly_empty_description_fails(tmp_path: Path) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              foo.md | ---\\ndescription:\\n---\\n# Foo\\n
+            out
+        """),
+    )
+
+    assert _skills(tmp_path / "in", tmp_path / "out") == 1
+
+    assert (tmp_path / "out" / "documator-errors.md").read_text() == snapshot("""\
+# documator errors
+
+- foo.md (foo): the template declares an empty description
+""")
+
+
+def test_an_undecodable_template_is_reported_rather_than_crashing(
+    tmp_path: Path,
+) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              bar.md | # Bar\\n
+            out
+        """),
+    )
+    (tmp_path / "in" / "foo.md").write_bytes(b"# \xff\xfe\n")
+
+    assert _skills(tmp_path / "in", tmp_path / "out") == 1
+
+    reported = (tmp_path / "out" / "documator-errors.md").read_text()
+
+    assert reported.startswith(
+        "# documator errors\n\n- foo.md (foo): the template cannot be read: "
+    )
+    assert (tmp_path / "out" / "bar" / "SKILL.md").exists()
+
+
+def test_every_structural_reason_lands_in_one_report(tmp_path: Path) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              Foo.md | # Foo\\n
+              a
+                dup.md | # A\\n
+              b
+                dup.md | # B\\n
+              empty.md | \\n
+              named.md | ---\\nname: named\\n---\\nbody\\n
+            out
+        """),
+    )
+
+    assert _skills(tmp_path / "in", tmp_path / "out") == 1
+
+    assert (tmp_path / "out" / "documator-errors.md").read_text() == snapshot("""\
+# documator errors
+
+- Foo.md: "Foo" is not a valid skill name
+- the name "dup" is claimed by a/dup.md and b/dup.md
+- empty.md (empty): the template is empty
+- named.md (named): the template declares name, which the compiler sets
+""")
+
+
+def test_each_structural_reason_is_logged(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              Foo.md | # Foo\\n
+            out
+        """),
+    )
+
+    with caplog.at_level(logging.ERROR, logger="documator"):
+        assert _skills(tmp_path / "in", tmp_path / "out") == 1
+
+    assert caplog.messages == snapshot(['Foo.md: "Foo" is not a valid skill name'])
+
+
+def test_an_operational_failure_still_outranks_a_structural_one(tmp_path: Path) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              Foo.md | # Foo\\n
+              bar.md | ![[Missing]]
+            out
+        """),
+    )
+
+    assert _skills(tmp_path / "in", tmp_path / "out") == 2
 
 
 def test_logs_each_compiled_skill(

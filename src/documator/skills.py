@@ -3,6 +3,7 @@ from enum import StrEnum
 from pathlib import Path
 
 from iterpy import Arr
+from pydantic import ValidationError
 
 from documator.domain import (
     ExitCode,
@@ -22,9 +23,19 @@ from documator.engine import (
     report_conflict,
     worst,
 )
-from documator.frontmatter import SkillName, compose, split
+from documator.frontmatter import SkillName, Template, compose, split
 from documator.inert import PathClass, classify
 from documator.parsing import Markdown
+from documator.structural import (
+    Collision,
+    Derived,
+    Reason,
+    StructuralFailure,
+    Unreadable,
+    invalid_name,
+    report,
+    unusable,
+)
 from documator.transclusion import (
     AttachmentPath,
     NotePath,
@@ -36,9 +47,16 @@ from documator.transclusion import (
 
 @dataclass(frozen=True, slots=True)
 class _Template:
-    name: SkillName
-    source: RelativePath
+    derived: Derived
     bundle: tuple[RelativePath, ...]
+
+
+# Frontmatter is lifted from the source before anything runs, so no block and no
+# transclusion can forge it.
+@dataclass(frozen=True, slots=True)
+class _Validated:
+    template: _Template
+    authored: Template
 
 
 class _Verb(StrEnum):
@@ -76,7 +94,7 @@ def _templates(input_dir: InputDir, current: RelativePath) -> list[_Template]:
     )
     bare = files.filter(lambda entry: entry.suffix.lower() == ".md").map(
         lambda entry: _Template(
-            SkillName(entry.stem), RelativePath(current / entry.name), ()
+            Derived(SkillName(entry.stem), RelativePath(current / entry.name)), ()
         )
     )
     return [*nested, *bare]
@@ -91,29 +109,32 @@ def _folder_template(input_dir: InputDir, folder: RelativePath) -> _Template:
         .filter(lambda path: path != source and classify(path) is PathClass.OPEN)
         .to_list()
     )
-    return _Template(SkillName(folder.name), RelativePath(source), tuple(bundle))
+    return _Template(
+        Derived(SkillName(folder.name), RelativePath(source)), tuple(bundle)
+    )
 
 
 def _artifacts(
-    template: _Template, vault: Vault, timeout: TimeoutSeconds
+    validated: _Validated, vault: Vault, timeout: TimeoutSeconds
 ) -> list[_Artifact]:
-    note = NotePath(template.source)
-    # Frontmatter is lifted from the source, so no block or transclusion can forge it.
-    source = split(Markdown(vault.read(note)))
-    rendered = render_markdown(source.body, Origin(vault, (note,)), timeout)
+    derived = validated.template.derived
+    note = NotePath(derived.source)
+    rendered = render_markdown(validated.authored.body, Origin(vault, (note,)), timeout)
     compiled = _Artifact(
         _Verb.COMPILED,
-        template.source,
-        RelativePath(Path(template.name) / "SKILL.md"),
-        compose(template.name, source.declared, rendered.text).encode("utf-8"),
+        derived.source,
+        RelativePath(Path(derived.name) / "SKILL.md"),
+        compose(derived.name, validated.authored.declared, rendered.text).encode(
+            "utf-8"
+        ),
         rendered.failures,
     )
-    folder = RelativePath(template.source.parent)
+    folder = RelativePath(derived.source.parent)
     return [
         compiled,
         *(
-            _bundled(template.name, path, folder, vault, timeout)
-            for path in template.bundle
+            _bundled(derived.name, path, folder, vault, timeout)
+            for path in validated.template.bundle
         ),
     ]
 
@@ -141,10 +162,68 @@ def _bundled(
     )
 
 
+# Names and collisions are decided from paths alone, so a broken skill never gets as far
+# as executing one of its `!command` blocks.
+def _named(
+    templates: list[_Template],
+) -> tuple[list[_Template], list[StructuralFailure]]:
+    judged = [(template, invalid_name(template.derived)) for template in templates]
+    return (
+        [template for template, failure in judged if failure is None],
+        [failure for _, failure in judged if failure is not None],
+    )
+
+
+# The namespace is global and spans both template forms, because scoped checking is
+# incoherent under a flat output layout. Neither side of a clash is emitted, since an
+# arbitrary winner would make the surviving skill depend on tiebreak luck.
+def _unique(
+    templates: list[_Template],
+) -> tuple[list[_Template], list[StructuralFailure]]:
+    claims = Arr(templates).groupby(lambda template: template.derived.name).to_list()
+    return (
+        [
+            template
+            for _, claimants in claims
+            if len(claimants) == 1
+            for template in claimants
+        ],
+        [
+            Collision(
+                SkillName(name),
+                tuple(template.derived.source for template in claimants),
+            )
+            for name, claimants in claims
+            if len(claimants) > 1
+        ],
+    )
+
+
+def _read(template: _Template, vault: Vault) -> _Validated | StructuralFailure:
+    derived = template.derived
+    try:
+        authored = split(Markdown(vault.read(NotePath(derived.source))))
+    except (OSError, UnicodeDecodeError, ValidationError) as error:
+        # Collapsed to one line, because each reason is one bullet in the report.
+        return Unreadable(derived, Reason(" ".join(str(error).split())))
+    rejected = unusable(derived, authored)
+    return rejected if rejected is not None else _Validated(template, authored)
+
+
+def _usable(
+    templates: list[_Template], vault: Vault
+) -> tuple[list[_Validated], list[StructuralFailure]]:
+    read = [_read(template, vault) for template in templates]
+    return (
+        [outcome for outcome in read if isinstance(outcome, _Validated)],
+        [outcome for outcome in read if not isinstance(outcome, _Validated)],
+    )
+
+
 def _unclaimed(input_dir: InputDir, templates: list[_Template]) -> list[RelativePath]:
     claimed = (
         Arr(templates)
-        .map(lambda template: Arr([template.source, *template.bundle]))
+        .map(lambda template: Arr([template.derived.source, *template.bundle]))
         .flatten()
         .to_list()
     )
@@ -178,15 +257,27 @@ def skills(
     for ignored in _unclaimed(input_dir, templates):
         _report_ignored(ignored)
 
+    named, misnamed = _named(templates)
+    unique, colliding = _unique(named)
+    validated, unusable_sources = _usable(unique, vault)
+    # Logged as discovered; the report is what re-orders them.
+    failures = [*misnamed, *colliding, *unusable_sources]
+    for failure in failures:
+        log.error("%s", failure)
+
     # The whole tree resolves before anything is touched, so pruning is never partial.
     artifacts = (
-        Arr(templates)
-        .map(lambda template: Arr(_artifacts(template, vault, timeout)))
+        Arr(validated)
+        .map(lambda skill: Arr(_artifacts(skill, vault, timeout)))
         .flatten()
         .to_list()
     )
 
-    prune(output_dir, {artifact.target for artifact in artifacts})
+    # The reasons are an artifact of their own, so a stale one dies with the run that
+    # produced it and a skill that failed loses its previously-compiled copy.
+    reasons = RelativePath(Path("documator-errors.md"))
+    produced = {artifact.target for artifact in artifacts}
+    prune(output_dir, produced | ({reasons} if failures else set()))
 
     for artifact in artifacts:
         target = output_dir.root / artifact.target
@@ -194,6 +285,11 @@ def skills(
         target.write_bytes(artifact.content)
         log.info("%s %s into %s", artifact.verb, artifact.source, artifact.target)
 
-    return worst(
+    if failures:
+        (output_dir.root / reasons).write_text(report(failures), encoding="utf-8")
+
+    rendered = worst(
         Arr(artifacts).map(lambda artifact: Arr(artifact.failures)).flatten().to_list()
     )
+    # A structural failure is a content failure; 2 stays reserved for an impossible run.
+    return ExitCode(max(rendered, 1 if failures else 0))
