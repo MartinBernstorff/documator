@@ -1,6 +1,13 @@
 from inline_snapshot import snapshot
 
-from documator.frontmatter import DeclaredLine, SkillName, compose, split
+from documator.frontmatter import (
+    DeclaredLine,
+    SkillName,
+    compose,
+    declares_empty_description,
+    declares_name,
+    split,
+)
 from documator.parsing import Markdown
 
 
@@ -80,21 +87,39 @@ body
 """)
 
 
-def test_a_declared_name_never_displaces_the_stem() -> None:
-    composed = compose(
-        SkillName("code-review"),
-        (DeclaredLine("name: something-else"), DeclaredLine("model: opus")),
-        Markdown("body\n"),
+def test_a_declared_name_is_spotted_whatever_its_spacing() -> None:
+    assert {
+        line: declares_name((DeclaredLine(line),))
+        for line in [
+            "name: other",
+            "name : other",
+            "name:",
+            "nameless: yes",
+            "model: x",
+        ]
+    } == snapshot(
+        {
+            "name: other": True,
+            "name : other": True,
+            "name:": True,
+            "nameless: yes": False,
+            "model: x": False,
+        }
     )
 
-    assert composed == snapshot("""\
----
-name: code-review
-description: code-review
-model: opus
----
-body
-""")
+
+def test_only_a_valueless_description_counts_as_empty() -> None:
+    assert {
+        line: declares_empty_description((DeclaredLine(line),))
+        for line in ["description:", "description: ", "description:  x", "description"]
+    } == snapshot(
+        {
+            "description:": True,
+            "description: ": True,
+            "description:  x": False,
+            "description": False,
+        }
+    )
 
 
 def test_declared_keys_pass_through_verbatim() -> None:
