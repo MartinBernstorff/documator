@@ -1,6 +1,9 @@
 pre-commit:
   piped: true
   commands:
+    docs:
+      run: uv run documator render templates output
+      stage_fixed: true
     fix:
       priority: 1
       run: moon run documator:lint-fix documator:format-fix
