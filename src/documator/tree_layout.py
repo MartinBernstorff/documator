@@ -47,10 +47,13 @@ def build_tree(base: Path, layout: TreeLayout) -> None:
         target.write_text(entry.content)
 
 
+# The manifest is bookkeeping, not output: spelling it into every expected tree would
+# bury what each test is actually about. `test_manifest.py` asserts it directly.
 def _describe(base: Path) -> dict[Path, str | None]:
     return {
         path.relative_to(base): None if path.is_dir() else path.read_text()
         for path in base.rglob("*")
+        if path.name != ".documator-manifest.json"
     }
 
 

@@ -15,6 +15,7 @@ from documator.domain import (
 from documator.engine import (
     Failure,
     Origin,
+    blocked,
     directory_conflict,
     log,
     prune,
@@ -25,6 +26,14 @@ from documator.engine import (
 )
 from documator.frontmatter import SkillName, Template, compose, split
 from documator.inert import PathClass, classify
+from documator.manifest import (
+    DestinationPath,
+    Manifest,
+    TemplatePath,
+    read_manifest,
+    write_manifest,
+)
+from documator.notice import annotated
 from documator.parsing import Markdown
 from documator.structural import (
     Collision,
@@ -64,12 +73,13 @@ class _Verb(StrEnum):
     BUNDLED = "bundled"
 
 
+# Markdown content stays text until write time, where the notice is stamped into it.
 @dataclass(frozen=True, slots=True)
 class _Artifact:
     verb: _Verb
-    source: RelativePath
-    target: RelativePath
-    content: bytes
+    source: TemplatePath
+    target: DestinationPath
+    content: Markdown | bytes
     failures: list[Failure]
 
 
@@ -122,11 +132,9 @@ def _artifacts(
     rendered = render_markdown(validated.authored.body, Origin(vault, (note,)), timeout)
     compiled = _Artifact(
         _Verb.COMPILED,
-        derived.source,
-        RelativePath(Path(derived.name) / "SKILL.md"),
-        compose(derived.name, validated.authored.declared, rendered.text).encode(
-            "utf-8"
-        ),
+        TemplatePath(derived.source),
+        DestinationPath(RelativePath(Path(derived.name) / "SKILL.md")),
+        compose(derived.name, validated.authored.declared, rendered.text),
         rendered.failures,
     )
     folder = RelativePath(derived.source.parent)
@@ -147,19 +155,18 @@ def _bundled(
     vault: Vault,
     timeout: TimeoutSeconds,
 ) -> _Artifact:
-    target = RelativePath(Path(name) / path.relative_to(folder))
+    target = DestinationPath(RelativePath(Path(name) / path.relative_to(folder)))
+    source = TemplatePath(path)
     if path.suffix.lower() != ".md":
         return _Artifact(
-            _Verb.BUNDLED, path, target, vault.read_bytes(AttachmentPath(path)), []
+            _Verb.BUNDLED, source, target, vault.read_bytes(AttachmentPath(path)), []
         )
     note = NotePath(path)
     # A bundled note is a document, not a skill, so it renders without frontmatter.
     rendered = render_markdown(
         Markdown(vault.read(note)), Origin(vault, (note,)), timeout
     )
-    return _Artifact(
-        _Verb.BUNDLED, path, target, rendered.text.encode("utf-8"), rendered.failures
-    )
+    return _Artifact(_Verb.BUNDLED, source, target, rendered.text, rendered.failures)
 
 
 # Names and collisions are decided from paths alone, so a broken skill never gets as far
@@ -261,8 +268,8 @@ def skills(
     unique, colliding = _unique(named)
     validated, unusable_sources = _usable(unique, vault)
     # Logged as discovered; the report is what re-orders them.
-    failures = [*misnamed, *colliding, *unusable_sources]
-    for failure in failures:
+    structural = [*misnamed, *colliding, *unusable_sources]
+    for failure in structural:
         log.error("%s", failure)
 
     # The whole tree resolves before anything is touched, so pruning is never partial.
@@ -275,21 +282,48 @@ def skills(
 
     # The reasons are an artifact of their own, so a stale one dies with the run that
     # produced it and a skill that failed loses its previously-compiled copy.
-    reasons = RelativePath(Path("documator-errors.md"))
+    reasons = DestinationPath(RelativePath(Path("documator-errors.md")))
     produced = {artifact.target for artifact in artifacts}
-    prune(output_dir, produced | ({reasons} if failures else set()))
+    tracked = read_manifest(output_dir)
+    prune(output_dir, tracked, produced | ({reasons} if structural else set()))
 
-    for artifact in artifacts:
-        target = output_dir.root / artifact.target
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(artifact.content)
-        log.info("%s %s into %s", artifact.verb, artifact.source, artifact.target)
-
-    if failures:
-        (output_dir.root / reasons).write_text(report(failures), encoding="utf-8")
-
-    rendered = worst(
+    content = (
         Arr(artifacts).map(lambda artifact: Arr(artifact.failures)).flatten().to_list()
     )
+    written: dict[TemplatePath, DestinationPath] = {}
+    for artifact in artifacts:
+        refused = blocked(
+            output_dir, tracked.destinations() | set(written.values()), artifact.target
+        )
+        if refused is not None:
+            content.append(refused)
+            continue
+        target = output_dir.root / artifact.target
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(_bytes(artifact))
+        written[artifact.source] = artifact.target
+        log.info("%s %s into %s", artifact.verb, artifact.source, artifact.target)
+
+    if structural:
+        refused = blocked(
+            output_dir, tracked.destinations() | set(written.values()), reasons
+        )
+        if refused is not None:
+            content.append(refused)
+        else:
+            (output_dir.root / reasons).write_text(report(structural), encoding="utf-8")
+            # The report answers to the run, not to a template, so it is its own source.
+            written[TemplatePath(RelativePath(reasons))] = reasons
+
+    # Written last and only for what really landed, so the manifest can never claim a
+    # file this run refused to write.
+    write_manifest(output_dir, Manifest(written))
+
     # A structural failure is a content failure; 2 stays reserved for an impossible run.
-    return ExitCode(max(rendered, 1 if failures else 0))
+    return ExitCode(max(worst(content), 1 if structural else 0))
+
+
+def _bytes(artifact: _Artifact) -> bytes:
+    if isinstance(artifact.content, bytes):
+        return artifact.content
+    return annotated(artifact.content, artifact.source).encode("utf-8")

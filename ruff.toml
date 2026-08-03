@@ -2,3 +2,9 @@ target-version = "py314"
 
 [lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
+
+# Expected file contents are fixture strings: a `TreeLayout` line cannot wrap, and a
+# `# noqa` inside a triple-quoted block is just more string. The formatter still holds
+# real code to the line limit.
+[lint.per-file-ignores]
+"src/documator/test_*.py" = ["E501"]

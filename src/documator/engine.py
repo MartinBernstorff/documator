@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 
+from iterpy import Arr
+
 from documator.domain import (
     ExitCode,
     InputDir,
@@ -21,6 +23,7 @@ from documator.execution import (
     execute_span,
     marker,
 )
+from documator.manifest import DestinationPath, Manifest, manifest_path, reserved
 from documator.parsing import (
     Block,
     DeclarationBlock,
@@ -53,10 +56,11 @@ DEFAULT_TIMEOUT = TimeoutSeconds(10.0)
 log = logging.getLogger("documator")
 
 
+# An input nested inside the output is fine: pruning reaches only what the manifest
+# claims, so a run can render `templates/` into the repo root that holds it.
 class ConflictReason(StrEnum):
     IDENTICAL = "input and output directories are the same"
     OUTPUT_NESTED_IN_INPUT = "output directory is nested inside the input directory"
-    INPUT_NESTED_IN_OUTPUT = "input directory is nested inside the output directory"
 
 
 @dataclass(frozen=True)
@@ -76,8 +80,6 @@ def directory_conflict(
         reason = ConflictReason.IDENTICAL
     elif destination.is_relative_to(source):
         reason = ConflictReason.OUTPUT_NESTED_IN_INPUT
-    elif source.is_relative_to(destination):
-        reason = ConflictReason.INPUT_NESTED_IN_OUTPUT
     if reason is None:
         return None
     return DirectoryConflict(reason, source, destination)
@@ -101,16 +103,99 @@ def relative_files(input_dir: InputDir) -> list[RelativePath]:
     )
 
 
-def prune(output_dir: OutputDir, produced: set[RelativePath]) -> None:
+def prune(
+    output_dir: OutputDir, tracked: Manifest, produced: set[DestinationPath]
+) -> None:
     destination = output_dir.root
-    # Children sort after parents, so reverse order empties a directory first.
-    for path in sorted(destination.rglob("*"), key=str, reverse=True):
-        relative = RelativePath(path.relative_to(destination))
-        if path.is_file() and relative not in produced:
-            log.info("pruned %s", relative)
-            path.unlink()
-        elif path.is_dir() and not any(path.iterdir()):
-            path.rmdir()
+    owned = tracked.destinations()
+    # Guarded, because the output may be a whole repository: the walk is the cost.
+    if log.isEnabledFor(logging.DEBUG):
+        for kept in (
+            Arr(sorted(destination.rglob("*"), key=str))
+            .filter(lambda path: path.is_file() and path != manifest_path(output_dir))
+            .map(
+                lambda path: DestinationPath(
+                    RelativePath(path.relative_to(destination))
+                )
+            )
+            .filter(lambda relative: relative not in owned)
+        ):
+            log.debug("kept %s: not written by documator", kept)
+    emptied = set[Path]()
+    for relative in (
+        Arr(sorted(owned - produced, key=str))
+        .filter(lambda relative: (destination / relative).is_file())
+        .to_list()
+    ):
+        log.info("pruned %s", relative)
+        (destination / relative).unlink()
+        emptied.add((destination / relative).parent)
+    # Only a directory this run emptied is removed; somebody else's empty folder stays.
+    for directory in sorted(emptied, key=lambda path: len(path.parts), reverse=True):
+        current = directory
+        while current != destination and _is_empty_dir(current):
+            current.rmdir()
+            current = current.parent
+
+
+def _is_empty_dir(path: Path) -> bool:
+    return path.is_dir() and not any(path.iterdir())
+
+
+@dataclass(frozen=True, slots=True)
+class Untracked:
+    target: DestinationPath
+
+    def __str__(self) -> str:
+        return f"refusing to overwrite {self.target}: not written by documator"
+
+
+@dataclass(frozen=True, slots=True)
+class Obstructed:
+    target: DestinationPath
+    ancestor: DestinationPath
+
+    def __str__(self) -> str:
+        return f"refusing to write {self.target}: {self.ancestor} is not a directory"
+
+
+@dataclass(frozen=True, slots=True)
+class Reserved:
+    target: DestinationPath
+
+    def __str__(self) -> str:
+        return f"refusing to write {self.target}: documator keeps its manifest there"
+
+
+type WriteRefusal = Untracked | Obstructed | Reserved
+
+
+# Pruning no longer clears the way, so a foreign file at a target path — or one standing
+# where a target's parent directory belongs — blocks that write instead of vanishing.
+def refusal(
+    output_dir: OutputDir, owned: set[DestinationPath], target: DestinationPath
+) -> WriteRefusal | None:
+    destination = output_dir.root
+    if target == reserved():
+        return Reserved(target)
+    if (destination / target).exists() and target not in owned:
+        return Untracked(target)
+    for ancestor in reversed(target.parents):
+        occupied = destination / ancestor
+        if occupied.exists() and not occupied.is_dir():
+            return Obstructed(target, DestinationPath(RelativePath(ancestor)))
+    return None
+
+
+# The one gate every write goes through: a refusal costs the file, never the run.
+def blocked(
+    output_dir: OutputDir, owned: set[DestinationPath], target: DestinationPath
+) -> Failure | None:
+    refused = refusal(output_dir, owned, target)
+    if refused is None:
+        return None
+    log.error("%s", refused)
+    return Failure(Annotation(str(refused)), ExitCode(2))
 
 
 # An unresolvable transclusion stops the engine (2); a bad command only fails content.
