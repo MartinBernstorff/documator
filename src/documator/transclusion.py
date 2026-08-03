@@ -94,11 +94,14 @@ class Vault:
 
     # Indexing and reading are separate steps, so joining is where a note that left
     # the vault mid-run stops being a guess.
-    def source(self, note: NotePath) -> ExistingFile:
+    def source(self, note: VaultPath) -> ExistingFile:
         return ExistingFile(self.root / note.root)
 
     def read(self, note: NotePath) -> str:
         return self.source(note).root.read_text(encoding="utf-8")
+
+    def read_bytes(self, attachment: AttachmentPath) -> bytes:
+        return self.source(attachment).root.read_bytes()
 
     def beside(self, note: NotePath) -> WorkingDir:
         return WorkingDir(self.source(note).root.parent)
