@@ -7,7 +7,8 @@ from iterpy import Arr
 from pydantic import RootModel, field_validator
 from pydantic_core import PydanticCustomError
 
-from documator.domain import ExistingFile, InputDir, WorkingDir
+from documator.domain import ExistingFile, InputDir, RelativePath, WorkingDir
+from documator.inert import PathClass, classify
 
 Reference = NewType("Reference", str)
 CanonicalName = NewType("CanonicalName", tuple[str, ...])
@@ -115,6 +116,20 @@ def index(input_dir: InputDir) -> Vault:
         input_dir.root,
         tuple(sorted((NotePath(path) for path in markdown), key=str)),
         tuple(sorted((AttachmentPath(path) for path in other), key=str)),
+    )
+
+
+def _invisible(note: NotePath) -> bool:
+    return classify(RelativePath(note.root)) is PathClass.INVISIBLE
+
+
+# Attachments stay indexed: an `![[image.png]]` embed passes through unread, so dropping
+# an invisible one would turn it into the very error an invisible path must never be.
+def without_invisible_notes(vault: Vault) -> Vault:
+    return Vault(
+        vault.root,
+        tuple(Arr(vault.notes).filter(lambda note: not _invisible(note)).to_list()),
+        vault.attachments,
     )
 
 

@@ -62,4 +62,6 @@ class TimeoutSeconds(RootModel[float]):
         return value
 
 
+RelativePath = NewType("RelativePath", Path)
+
 ExitCode = NewType("ExitCode", int)

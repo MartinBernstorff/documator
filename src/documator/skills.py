@@ -3,11 +3,16 @@ from pathlib import Path
 
 from iterpy import Arr
 
-from documator.domain import ExitCode, InputDir, OutputDir, TimeoutSeconds
+from documator.domain import (
+    ExitCode,
+    InputDir,
+    OutputDir,
+    RelativePath,
+    TimeoutSeconds,
+)
 from documator.engine import (
     Failure,
     Origin,
-    RelativePath,
     directory_conflict,
     log,
     prune,
@@ -17,8 +22,9 @@ from documator.engine import (
     worst,
 )
 from documator.frontmatter import SkillName, compose, split
+from documator.inert import PathClass, classify
 from documator.parsing import Markdown
-from documator.transclusion import NotePath, Vault, index
+from documator.transclusion import NotePath, Vault, index, without_invisible_notes
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,6 +51,19 @@ def _compile(
     )
 
 
+def _emits(path: RelativePath) -> bool:
+    return path.suffix.lower() == ".md" and classify(path) is PathClass.OPEN
+
+
+# The flat layout gives a loose file no destination, so ignoring beats an error that
+# would make exit 2 permanent; the level stays graded so a real mistake stands out.
+def _report_ignored(path: RelativePath) -> None:
+    if classify(path) is PathClass.OPEN:
+        log.warning("ignored %s: move it into a SKILL.md folder to bundle it", path)
+    else:
+        log.info("ignored %s", path)
+
+
 def skills(
     input_dir: InputDir, output_dir: OutputDir, timeout: TimeoutSeconds
 ) -> ExitCode:
@@ -53,12 +72,15 @@ def skills(
         return report_conflict(conflict)
 
     # Indexed once per run, so every transclusion in the run sees the same vault.
-    vault = index(input_dir)
+    vault = without_invisible_notes(index(input_dir))
+
+    files = Arr(relative_files(input_dir))
+    for ignored in files.filter(lambda path: not _emits(path)).to_list():
+        _report_ignored(ignored)
 
     # The whole tree resolves before anything is touched, so pruning is never partial.
     compiled = (
-        Arr(relative_files(input_dir))
-        .filter(lambda path: path.suffix.lower() == ".md")
+        files.filter(_emits)
         .map(lambda template: _compile(template, vault, timeout))
         .to_list()
     )

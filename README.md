@@ -21,6 +21,21 @@ is organisational only, the filename stem becomes the skill name, and the frontm
 generated — any keys the template declares pass through, and a declared `description`
 wins over the name-derived placeholder.
 
+A path segment's prefix decides whether `skills` sees it:
+
+- `.`-prefixed — invisible. Not walked, not emitted, not readable, never an error, so
+  `.obsidian/` and `.DS_Store` can live in the tree.
+- `_`-prefixed — inert but readable. Emits no skill, yet stays a valid
+  `![[transclusion]]` target: the escape hatch for shared partials and drafts.
+
+A bare `.md` compiles to a skill only when no `.` or `_` segment sits anywhere on its
+path. Any other loose file is ignored rather than an error — the flat layout gives it no
+destination — and logged: `warning` for an ordinary file, `info` for a `.`/`_` path. To
+get a file bundled, move it into a `SKILL.md` folder.
+
+`render` deliberately keeps its copy-everything walk and mirrors `.obsidian/` and
+`.DS_Store` into its output. The two walks are not meant to agree.
+
 For the current options, run:
 
 ```

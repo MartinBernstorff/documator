@@ -2,11 +2,17 @@ import logging
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
-from typing import NewType
 
 from iterpy import Arr
 
-from documator.domain import ExitCode, InputDir, OutputDir, TimeoutSeconds, WorkingDir
+from documator.domain import (
+    ExitCode,
+    InputDir,
+    OutputDir,
+    RelativePath,
+    TimeoutSeconds,
+    WorkingDir,
+)
 from documator.execution import Annotation, execute_block, marker
 from documator.parsing import (
     Block,
@@ -25,8 +31,6 @@ from documator.transclusion import (
     Vault,
     resolve,
 )
-
-RelativePath = NewType("RelativePath", Path)
 
 DEFAULT_TIMEOUT = TimeoutSeconds(10.0)
 
