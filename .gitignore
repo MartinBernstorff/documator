@@ -12,3 +12,5 @@ build/
 .pytest_cache/
 .pyrefly_cache/
 .testmondata*
+output/cache/
+templates/cache/
