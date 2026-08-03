@@ -219,6 +219,240 @@ second
 """)
 
 
+def test_a_folder_holding_skill_md_compiles_under_its_folder_name(
+    tmp_path: Path,
+) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              guides
+                plan
+                  SKILL.md | # Body\\n
+            out
+        """),
+    )
+
+    assert _skills(tmp_path / "in", tmp_path / "out") == 0
+
+    assert_tree(
+        tmp_path / "out",
+        TreeLayout("""
+            plan
+              SKILL.md | ---\\nname: plan\\ndescription: plan\\n---\\n# Body\\n
+        """),
+    )
+
+
+def test_the_whole_subtree_is_bundled_with_its_structure_preserved(
+    tmp_path: Path,
+) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              guides
+                plan
+                  SKILL.md | # Body\\n
+                  references
+                    spec.pdf | %PDF-fake\\n
+            out
+        """),
+    )
+
+    assert _skills(tmp_path / "in", tmp_path / "out") == 0
+
+    assert_tree(
+        tmp_path / "out",
+        TreeLayout("""
+            plan
+              SKILL.md | ---\\nname: plan\\ndescription: plan\\n---\\n# Body\\n
+              references
+                spec.pdf | %PDF-fake\\n
+        """),
+    )
+
+
+def test_an_inert_or_invisible_path_inside_a_skill_folder_is_not_bundled(
+    tmp_path: Path,
+) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              foo
+                SKILL.md | # Foo\\n
+                _draft.md | # Draft\\n
+                .cache
+                  junk.txt | junk\\n
+            out
+        """),
+    )
+
+    assert _skills(tmp_path / "in", tmp_path / "out") == 0
+
+    assert_tree(
+        tmp_path / "out",
+        TreeLayout("""
+            foo
+              SKILL.md | ---\\nname: foo\\ndescription: foo\\n---\\n# Foo\\n
+        """),
+    )
+
+
+def test_an_undecodable_bundled_file_survives_byte_for_byte(tmp_path: Path) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              foo
+                SKILL.md | # Foo\\n
+            out
+        """),
+    )
+    (tmp_path / "in" / "foo" / "logo.png").write_bytes(b"\x89PNG\r\n\x1a\n\xff\xfe\x00")
+
+    assert _skills(tmp_path / "in", tmp_path / "out") == 0
+
+    assert (tmp_path / "out" / "foo" / "logo.png").read_bytes() == snapshot(
+        b"\x89PNG\r\n\x1a\n\xff\xfe\x00"
+    )
+
+
+# On a case-insensitive filesystem a lowercase manifest must not be mistaken for
+# SKILL.md, or the folder skill would be bundled over its own output.
+def test_a_lowercase_skill_md_does_not_make_a_skill_folder(tmp_path: Path) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              foo
+                skill.md | # Lower\\n
+            out
+        """),
+    )
+
+    assert _skills(tmp_path / "in", tmp_path / "out") == 0
+
+    assert_tree(
+        tmp_path / "out",
+        TreeLayout("""
+            skill
+              SKILL.md | ---\\nname: skill\\ndescription: skill\\n---\\n# Lower\\n
+        """),
+    )
+
+
+def test_a_bundled_markdown_file_renders_without_generated_frontmatter(
+    tmp_path: Path,
+) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              foo
+                SKILL.md | # Foo\\n
+                notes.md | ---\\ndescription: mine\\n---\\n```\\n!echo bundled\\n```\\n
+            out
+        """),
+    )
+
+    assert _skills(tmp_path / "in", tmp_path / "out") == 0
+
+    assert (tmp_path / "out" / "foo" / "notes.md").read_text() == snapshot("""\
+---
+description: mine
+---
+```
+bundled
+```
+""")
+
+
+def test_a_deeper_skill_md_is_bundled_rather_than_producing_a_second_skill(
+    tmp_path: Path,
+) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              outer
+                SKILL.md | # Outer\\n
+                example
+                  SKILL.md | # Example\\n
+            out
+        """),
+    )
+
+    assert _skills(tmp_path / "in", tmp_path / "out") == 0
+
+    assert_tree(
+        tmp_path / "out",
+        TreeLayout("""
+            outer
+              SKILL.md | ---\\nname: outer\\ndescription: outer\\n---\\n# Outer\\n
+              example
+                SKILL.md | # Example\\n
+        """),
+    )
+
+
+def test_a_bare_markdown_file_inside_a_skill_folder_is_not_its_own_skill(
+    tmp_path: Path,
+) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              outer
+                SKILL.md | # Outer\\n
+                helper.md | # Helper\\n
+            out
+        """),
+    )
+
+    assert _skills(tmp_path / "in", tmp_path / "out") == 0
+
+    assert not (tmp_path / "out" / "helper").exists()
+
+
+def test_a_folder_without_skill_md_produces_nothing(tmp_path: Path) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              organisational
+                notes.txt | loose\\n
+            out
+        """),
+    )
+
+    assert _skills(tmp_path / "in", tmp_path / "out") == 0
+
+    assert_tree(tmp_path / "out", TreeLayout(""))
+
+
+def test_logs_each_bundled_file(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              outer
+                SKILL.md | # Outer\\n
+                example
+                  SKILL.md | # Example\\n
+            out
+        """),
+    )
+
+    with caplog.at_level(logging.INFO, logger="documator"):
+        assert _skills(tmp_path / "in", tmp_path / "out") == 0
+
+    assert "bundled outer/example/SKILL.md into outer/example/SKILL.md" in caplog.text
+
+
 def test_non_markdown_files_are_not_skills(tmp_path: Path) -> None:
     build_tree(
         tmp_path,

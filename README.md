@@ -21,6 +21,19 @@ is organisational only, the filename stem becomes the skill name, and the frontm
 generated — any keys the template declares pass through, and a declared `description`
 wins over the name-derived placeholder.
 
+A template takes one of two forms. A bare `foo.md` becomes `foo/SKILL.md`. A folder
+holding a `SKILL.md` becomes `<folder-name>/SKILL.md`, and the folder's whole subtree is
+bundled alongside it with its internal structure preserved — flattening applies only to
+the path *above* the folder, so `guides/plan/references/spec.pdf` lands at
+`plan/references/spec.pdf`. Bundled files follow `render`'s extension rule: `.md` gets
+the full pipeline, everything else is copied verbatim. Only `SKILL.md` gets generated
+frontmatter; a bundled `.md` is a document, not a skill.
+
+Such a folder is a hard leaf, so skills cannot nest: a deeper `SKILL.md` is bundled as an
+ordinary file rather than compiling to a second skill. That leaves room for a skill that
+ships an example skill as a reference file, and each bundled file is logged so the
+swallowing stays visible in run output.
+
 A path segment's prefix decides whether `skills` sees it:
 
 - `.`-prefixed — invisible. Not walked, not emitted, not readable, never an error, so
