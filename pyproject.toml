@@ -30,6 +30,6 @@ dev = [
     "pytest-randomly>=4.1.0",
     "pytest-testmon>=2.2.0",
     "pytest-xdist>=3.8.0",
-    "ruff>=0.16.0",
+    "ruff>=0.16.1",
     "tach>=0.35.0",
 ]
