@@ -863,7 +863,7 @@ def test_a_declared_name_fails_even_when_it_matches_the_derived_one(
     assert (tmp_path / "out" / "documator-errors.md").read_text() == snapshot("""\
 # documator errors
 
-- foo.md: the template declares name, which the compiler sets
+- foo.md (foo): the template declares name, which the compiler sets
 """)
 
 
@@ -882,7 +882,7 @@ def test_an_explicitly_empty_description_fails(tmp_path: Path) -> None:
     assert (tmp_path / "out" / "documator-errors.md").read_text() == snapshot("""\
 # documator errors
 
-- foo.md: the template declares an empty description
+- foo.md (foo): the template declares an empty description
 """)
 
 
@@ -901,10 +901,10 @@ def test_an_undecodable_template_is_reported_rather_than_crashing(
 
     assert _skills(tmp_path / "in", tmp_path / "out") == 1
 
-    assert (
-        (tmp_path / "out" / "documator-errors.md")
-        .read_text()
-        .startswith("# documator errors\n\n- foo.md: the template cannot be read: ")
+    reported = (tmp_path / "out" / "documator-errors.md").read_text()
+
+    assert reported.startswith(
+        "# documator errors\n\n- foo.md (foo): the template cannot be read: "
     )
     assert (tmp_path / "out" / "bar" / "SKILL.md").exists()
 
@@ -932,8 +932,8 @@ def test_every_structural_reason_lands_in_one_report(tmp_path: Path) -> None:
 
 - Foo.md: "Foo" is not a valid skill name
 - the name "dup" is claimed by a/dup.md and b/dup.md
-- empty.md: the template is empty
-- named.md: the template declares name, which the compiler sets
+- empty.md (empty): the template is empty
+- named.md (named): the template declares name, which the compiler sets
 """)
 
 

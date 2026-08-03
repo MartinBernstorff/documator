@@ -5,7 +5,7 @@ from inline_snapshot import snapshot
 from documator.domain import RelativePath
 from documator.frontmatter import DeclaredLine, SkillName, Template
 from documator.parsing import Markdown
-from documator.structural import invalid_name, report, unusable
+from documator.structural import Derived, invalid_name, report, unusable
 
 
 def test_only_lowercase_dashed_names_are_valid() -> None:
@@ -26,7 +26,8 @@ def test_only_lowercase_dashed_names_are_valid() -> None:
     ]
 
     assert {
-        name: invalid_name(RelativePath(Path("in.md")), SkillName(name)) is None
+        name: invalid_name(Derived(SkillName(name), RelativePath(Path("in.md"))))
+        is None
         for name in candidates
     } == snapshot(
         {
@@ -49,7 +50,7 @@ def test_only_lowercase_dashed_names_are_valid() -> None:
 
 def test_an_invalid_name_is_reported_verbatim() -> None:
     error = invalid_name(
-        RelativePath(Path("a/Code Review.md")), SkillName("Code Review")
+        Derived(SkillName("Code Review"), RelativePath(Path("a/Code Review.md")))
     )
 
     assert str(error) == snapshot(
@@ -59,52 +60,71 @@ def test_an_invalid_name_is_reported_verbatim() -> None:
 
 def test_a_body_of_only_whitespace_is_empty() -> None:
     error = unusable(
-        RelativePath(Path("foo.md")),
+        Derived(SkillName("plan"), RelativePath(Path("guides/plan/SKILL.md"))),
         Template((DeclaredLine("description: real"),), Markdown("\n \t\n")),
     )
 
-    assert str(error) == snapshot("foo.md: the template is empty")
+    assert str(error) == snapshot("guides/plan/SKILL.md (plan): the template is empty")
 
 
 def test_a_declared_name_is_unusable_even_when_it_matches_the_stem() -> None:
     error = unusable(
-        RelativePath(Path("foo.md")),
+        Derived(SkillName("foo"), RelativePath(Path("foo.md"))),
         Template((DeclaredLine("name: foo"),), Markdown("body\n")),
     )
 
     assert str(error) == snapshot(
-        "foo.md: the template declares name, which the compiler sets"
+        "foo.md (foo): the template declares name, which the compiler sets"
     )
 
 
 def test_an_explicitly_empty_description_is_unusable() -> None:
     error = unusable(
-        RelativePath(Path("foo.md")),
+        Derived(SkillName("foo"), RelativePath(Path("foo.md"))),
         Template((DeclaredLine("description:  "),), Markdown("body\n")),
     )
 
-    assert str(error) == snapshot("foo.md: the template declares an empty description")
+    assert str(error) == snapshot(
+        "foo.md (foo): the template declares an empty description"
+    )
 
 
 def test_a_usable_template_has_no_error() -> None:
     assert (
         unusable(
-            RelativePath(Path("foo.md")),
+            Derived(SkillName("foo"), RelativePath(Path("foo.md"))),
             Template((DeclaredLine("description: real"),), Markdown("body\n")),
         )
         is None
     )
 
 
-def test_the_report_lists_every_reason() -> None:
+def test_the_report_sorts_by_source_path_whatever_order_it_is_given() -> None:
     errors = [
-        invalid_name(RelativePath(Path("Foo.md")), SkillName("Foo")),
-        unusable(RelativePath(Path("bar.md")), Template((), Markdown("\n"))),
+        unusable(
+            Derived(SkillName("later"), RelativePath(Path("z.md"))),
+            Template((), Markdown("\n")),
+        ),
+        invalid_name(Derived(SkillName("Early"), RelativePath(Path("a/Early.md")))),
     ]
 
     assert report([error for error in errors if error is not None]) == snapshot("""\
 # documator errors
 
-- Foo.md: "Foo" is not a valid skill name
-- bar.md: the template is empty
+- a/Early.md: "Early" is not a valid skill name
+- z.md (later): the template is empty
 """)
+
+
+# A snapshot would carry the zero-width spaces invisibly, so assert the absence that
+# is the whole point of the guard.
+def test_the_report_cannot_forge_a_link_or_a_tag_in_the_readers_vault() -> None:
+    error = invalid_name(
+        Derived(SkillName("[[Linked]] #tag"), RelativePath(Path("a.md")))
+    )
+    assert error is not None
+
+    reported = report([error])
+
+    assert "[[Linked]]" not in reported
+    assert "#tag" not in reported

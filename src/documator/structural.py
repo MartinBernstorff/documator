@@ -5,6 +5,7 @@ from typing import NewType
 from iterpy import Arr
 
 from documator.domain import RelativePath
+from documator.execution import Emitted, neutralized
 from documator.frontmatter import (
     SkillName,
     Template,
@@ -16,15 +17,25 @@ from documator.parsing import Markdown
 Reason = NewType("Reason", str)
 
 
-# The name is a public identifier, so it is validated and reported verbatim: renaming
-# it silently would be a breaking change at a distance.
+# Name and source travel together everywhere a skill is judged, and the name is decided
+# by the path, so the pair is one value rather than two arguments.
 @dataclass(frozen=True, slots=True)
-class InvalidName:
-    source: RelativePath
+class Derived:
     name: SkillName
+    source: RelativePath
 
     def __str__(self) -> str:
-        return f'{self.source}: "{self.name}" is not a valid skill name'
+        return f"{self.source} ({self.name})"
+
+
+# The name is a public identifier, so it is validated and reported verbatim: renaming it
+# silently would be a breaking change at a distance.
+@dataclass(frozen=True, slots=True)
+class InvalidName:
+    derived: Derived
+
+    def __str__(self) -> str:
+        return f'{self.derived.source}: "{self.derived.name}" is not a valid skill name'
 
 
 # One global namespace spans both template forms, so the name alone identifies a clash.
@@ -42,62 +53,70 @@ class Collision:
 # offers it and the agent invokes it for blank instructions.
 @dataclass(frozen=True, slots=True)
 class EmptyTemplate:
-    source: RelativePath
+    derived: Derived
 
     def __str__(self) -> str:
-        return f"{self.source}: the template is empty"
+        return f"{self.derived}: the template is empty"
 
 
 @dataclass(frozen=True, slots=True)
 class DeclaredName:
-    source: RelativePath
+    derived: Derived
 
     def __str__(self) -> str:
-        return f"{self.source}: the template declares name, which the compiler sets"
+        return f"{self.derived}: the template declares name, which the compiler sets"
 
 
 @dataclass(frozen=True, slots=True)
 class EmptyDescription:
-    source: RelativePath
+    derived: Derived
 
     def __str__(self) -> str:
-        return f"{self.source}: the template declares an empty description"
+        return f"{self.derived}: the template declares an empty description"
 
 
 @dataclass(frozen=True, slots=True)
 class Unreadable:
-    source: RelativePath
+    derived: Derived
     reason: Reason
 
     def __str__(self) -> str:
-        return f"{self.source}: the template cannot be read: {self.reason}"
+        return f"{self.derived}: the template cannot be read: {self.reason}"
 
 
 type UnusableSource = EmptyTemplate | DeclaredName | EmptyDescription
-type StructuralError = InvalidName | Collision | UnusableSource | Unreadable
+type StructuralFailure = InvalidName | Collision | UnusableSource | Unreadable
 
 
-def invalid_name(source: RelativePath, name: SkillName) -> InvalidName | None:
-    legal = re.fullmatch(r"[a-z0-9]+(-[a-z0-9]+)*", name) is not None
-    return None if legal and len(name) <= 64 else InvalidName(source, name)
-
-
-def collision(name: SkillName, sources: tuple[RelativePath, ...]) -> Collision | None:
-    return Collision(name, sources) if len(sources) > 1 else None
+def invalid_name(derived: Derived) -> InvalidName | None:
+    legal = re.fullmatch(r"[a-z0-9]+(-[a-z0-9]+)*", derived.name) is not None
+    return None if legal and len(derived.name) <= 64 else InvalidName(derived)
 
 
 # Emptiness is measured on the stripped source: judging the render would make structural
 # validity depend on subprocess output, and skills would blink in and out under --watch.
-def unusable(source: RelativePath, template: Template) -> UnusableSource | None:
+def unusable(derived: Derived, template: Template) -> UnusableSource | None:
     if declares_name(template.declared):
-        return DeclaredName(source)
+        return DeclaredName(derived)
     if declares_empty_description(template.declared):
-        return EmptyDescription(source)
+        return EmptyDescription(derived)
     if not template.body.strip():
-        return EmptyTemplate(source)
+        return EmptyTemplate(derived)
     return None
 
 
-def report(errors: list[StructuralError]) -> Markdown:
-    reasons = Arr(errors).map(lambda error: f"- {error}\n").to_list()
+def _at(failure: StructuralFailure) -> str:
+    if isinstance(failure, Collision):
+        return str(failure.sources[0])
+    return str(failure.derived.source)
+
+
+# Sorted by source path, so re-runs over an unchanged tree are byte-identical, and
+# neutralized, because the report lands in the same vault the reader browses.
+def report(failures: list[StructuralFailure]) -> Markdown:
+    reasons = (
+        Arr(sorted(failures, key=_at))
+        .map(lambda failure: f"- {neutralized(Emitted(str(failure)))}\n")
+        .to_list()
+    )
     return Markdown(f"# documator errors\n\n{''.join(reasons)}")

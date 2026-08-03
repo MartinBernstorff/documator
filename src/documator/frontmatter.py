@@ -34,9 +34,15 @@ def declares_name(declared: tuple[DeclaredLine, ...]) -> bool:
     return Arr(declared).any(lambda line: _opens(line, "name"))
 
 
+# A present key is intent to fill it, so quotes around nothing count as empty too.
 def declares_empty_description(declared: tuple[DeclaredLine, ...]) -> bool:
     return Arr(declared).any(
-        lambda line: re.fullmatch(r"description[ \t]*:[ \t]*", line) is not None
+        lambda line: (
+            re.fullmatch(
+                r"""description[ \t]*:[ \t]*('[ \t]*'|"[ \t]*")?[ \t]*""", line
+            )
+            is not None
+        )
     )
 
 

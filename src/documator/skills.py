@@ -27,10 +27,11 @@ from documator.frontmatter import SkillName, Template, compose, split
 from documator.inert import PathClass, classify
 from documator.parsing import Markdown
 from documator.structural import (
+    Collision,
+    Derived,
     Reason,
-    StructuralError,
+    StructuralFailure,
     Unreadable,
-    collision,
     invalid_name,
     report,
     unusable,
@@ -46,17 +47,16 @@ from documator.transclusion import (
 
 @dataclass(frozen=True, slots=True)
 class _Template:
-    name: SkillName
-    source: RelativePath
+    derived: Derived
     bundle: tuple[RelativePath, ...]
 
 
-# Frontmatter is lifted from the source before anything runs, so no block or
-# transclusion can forge it and every check is decided on what the author wrote.
+# Frontmatter is lifted from the source before anything runs, so no block and no
+# transclusion can forge it.
 @dataclass(frozen=True, slots=True)
-class _Checked:
+class _Validated:
     template: _Template
-    parsed: Template
+    authored: Template
 
 
 class _Verb(StrEnum):
@@ -94,7 +94,7 @@ def _templates(input_dir: InputDir, current: RelativePath) -> list[_Template]:
     )
     bare = files.filter(lambda entry: entry.suffix.lower() == ".md").map(
         lambda entry: _Template(
-            SkillName(entry.stem), RelativePath(current / entry.name), ()
+            Derived(SkillName(entry.stem), RelativePath(current / entry.name)), ()
         )
     )
     return [*nested, *bare]
@@ -109,28 +109,32 @@ def _folder_template(input_dir: InputDir, folder: RelativePath) -> _Template:
         .filter(lambda path: path != source and classify(path) is PathClass.OPEN)
         .to_list()
     )
-    return _Template(SkillName(folder.name), RelativePath(source), tuple(bundle))
+    return _Template(
+        Derived(SkillName(folder.name), RelativePath(source)), tuple(bundle)
+    )
 
 
 def _artifacts(
-    checked: _Checked, vault: Vault, timeout: TimeoutSeconds
+    validated: _Validated, vault: Vault, timeout: TimeoutSeconds
 ) -> list[_Artifact]:
-    template = checked.template
-    note = NotePath(template.source)
-    rendered = render_markdown(checked.parsed.body, Origin(vault, (note,)), timeout)
+    derived = validated.template.derived
+    note = NotePath(derived.source)
+    rendered = render_markdown(validated.authored.body, Origin(vault, (note,)), timeout)
     compiled = _Artifact(
         _Verb.COMPILED,
-        template.source,
-        RelativePath(Path(template.name) / "SKILL.md"),
-        compose(template.name, checked.parsed.declared, rendered.text).encode("utf-8"),
+        derived.source,
+        RelativePath(Path(derived.name) / "SKILL.md"),
+        compose(derived.name, validated.authored.declared, rendered.text).encode(
+            "utf-8"
+        ),
         rendered.failures,
     )
-    folder = RelativePath(template.source.parent)
+    folder = RelativePath(derived.source.parent)
     return [
         compiled,
         *(
-            _bundled(template.name, path, folder, vault, timeout)
-            for path in template.bundle
+            _bundled(derived.name, path, folder, vault, timeout)
+            for path in validated.template.bundle
         ),
     ]
 
@@ -160,64 +164,66 @@ def _bundled(
 
 # Names and collisions are decided from paths alone, so a broken skill never gets as far
 # as executing one of its `!command` blocks.
-def _named(templates: list[_Template]) -> tuple[list[_Template], list[StructuralError]]:
-    judged = [
-        (template, invalid_name(template.source, template.name))
-        for template in templates
-    ]
+def _named(
+    templates: list[_Template],
+) -> tuple[list[_Template], list[StructuralFailure]]:
+    judged = [(template, invalid_name(template.derived)) for template in templates]
     return (
-        [template for template, error in judged if error is None],
-        [error for _, error in judged if error is not None],
+        [template for template, failure in judged if failure is None],
+        [failure for _, failure in judged if failure is not None],
     )
 
 
 # The namespace is global and spans both template forms, because scoped checking is
-# incoherent under a flat output layout.
+# incoherent under a flat output layout. Neither side of a clash is emitted, since an
+# arbitrary winner would make the surviving skill depend on tiebreak luck.
 def _unique(
     templates: list[_Template],
-) -> tuple[list[_Template], list[StructuralError]]:
-    claims = (
-        Arr(templates)
-        .groupby(lambda template: template.name)
-        .map(
-            lambda claim: collision(
-                SkillName(claim[0]),
-                tuple(template.source for template in claim[1]),
-            )
-        )
-    )
-    collisions = [error for error in claims.to_list() if error is not None]
-    clashing = {error.name for error in collisions}
+) -> tuple[list[_Template], list[StructuralFailure]]:
+    claims = Arr(templates).groupby(lambda template: template.derived.name).to_list()
     return (
-        [template for template in templates if template.name not in clashing],
-        list(collisions),
+        [
+            template
+            for _, claimants in claims
+            if len(claimants) == 1
+            for template in claimants
+        ],
+        [
+            Collision(
+                SkillName(name),
+                tuple(template.derived.source for template in claimants),
+            )
+            for name, claimants in claims
+            if len(claimants) > 1
+        ],
     )
 
 
-def _read(template: _Template, vault: Vault) -> _Checked | StructuralError:
+def _read(template: _Template, vault: Vault) -> _Validated | StructuralFailure:
+    derived = template.derived
     try:
-        parsed = split(Markdown(vault.read(NotePath(template.source))))
+        authored = split(Markdown(vault.read(NotePath(derived.source))))
     except (OSError, UnicodeDecodeError, ValidationError) as error:
         # Collapsed to one line, because each reason is one bullet in the report.
-        return Unreadable(template.source, Reason(" ".join(str(error).split())))
-    rejected = unusable(template.source, parsed)
-    return rejected if rejected is not None else _Checked(template, parsed)
+        return Unreadable(derived, Reason(" ".join(str(error).split())))
+    rejected = unusable(derived, authored)
+    return rejected if rejected is not None else _Validated(template, authored)
 
 
 def _usable(
     templates: list[_Template], vault: Vault
-) -> tuple[list[_Checked], list[StructuralError]]:
+) -> tuple[list[_Validated], list[StructuralFailure]]:
     read = [_read(template, vault) for template in templates]
     return (
-        [outcome for outcome in read if isinstance(outcome, _Checked)],
-        [outcome for outcome in read if not isinstance(outcome, _Checked)],
+        [outcome for outcome in read if isinstance(outcome, _Validated)],
+        [outcome for outcome in read if not isinstance(outcome, _Validated)],
     )
 
 
 def _unclaimed(input_dir: InputDir, templates: list[_Template]) -> list[RelativePath]:
     claimed = (
         Arr(templates)
-        .map(lambda template: Arr([template.source, *template.bundle]))
+        .map(lambda template: Arr([template.derived.source, *template.bundle]))
         .flatten()
         .to_list()
     )
@@ -253,14 +259,15 @@ def skills(
 
     named, misnamed = _named(templates)
     unique, colliding = _unique(named)
-    checked, unusable_sources = _usable(unique, vault)
-    errors = [*misnamed, *colliding, *unusable_sources]
-    for error in errors:
-        log.error("%s", error)
+    validated, unusable_sources = _usable(unique, vault)
+    # Logged as discovered; the report is what re-orders them.
+    failures = [*misnamed, *colliding, *unusable_sources]
+    for failure in failures:
+        log.error("%s", failure)
 
     # The whole tree resolves before anything is touched, so pruning is never partial.
     artifacts = (
-        Arr(checked)
+        Arr(validated)
         .map(lambda skill: Arr(_artifacts(skill, vault, timeout)))
         .flatten()
         .to_list()
@@ -270,7 +277,7 @@ def skills(
     # produced it and a skill that failed loses its previously-compiled copy.
     reasons = RelativePath(Path("documator-errors.md"))
     produced = {artifact.target for artifact in artifacts}
-    prune(output_dir, produced | ({reasons} if errors else set()))
+    prune(output_dir, produced | ({reasons} if failures else set()))
 
     for artifact in artifacts:
         target = output_dir.root / artifact.target
@@ -278,11 +285,11 @@ def skills(
         target.write_bytes(artifact.content)
         log.info("%s %s into %s", artifact.verb, artifact.source, artifact.target)
 
-    if errors:
-        (output_dir.root / reasons).write_text(report(errors), encoding="utf-8")
+    if failures:
+        (output_dir.root / reasons).write_text(report(failures), encoding="utf-8")
 
-    failed = worst(
+    rendered = worst(
         Arr(artifacts).map(lambda artifact: Arr(artifact.failures)).flatten().to_list()
     )
-    # A structural error is a content failure; 2 stays reserved for an impossible run.
-    return ExitCode(max(failed, 1 if errors else 0))
+    # A structural failure is a content failure; 2 stays reserved for an impossible run.
+    return ExitCode(max(rendered, 1 if failures else 0))
