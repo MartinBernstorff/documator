@@ -322,7 +322,7 @@ def _expanded(command: Command, scope: Scope) -> Command | Undefined:
 
 
 def _authoring_error(text: Markdown, note: Annotation, origin: Origin) -> Rendered:
-    failure = _reported_at(note, origin, ExitCode(1))
+    failure = _failure_at(note, origin, ExitCode(1))
     return Rendered(Markdown(f"{text}\n{marker(note)}\n"), [failure])
 
 
@@ -331,13 +331,13 @@ def _authoring_error(text: Markdown, note: Annotation, origin: Origin) -> Render
 def _inline_authoring_error(
     text: Markdown, note: Annotation, origin: Origin
 ) -> Rendered:
-    failure = _reported_at(note, origin, ExitCode(1))
+    failure = _failure_at(note, origin, ExitCode(1))
     return Rendered(Markdown(f"{text} {marker(note)}"), [failure])
 
 
 # The failure is built before it is logged, so the line a reader sees inline is the same
 # string the end-of-run summary replays.
-def _reported_at(note: Annotation, origin: Origin, exit_code: ExitCode) -> Failure:
+def _failure_at(note: Annotation, origin: Origin, exit_code: ExitCode) -> Failure:
     failure = Failure(origin.note(), note, exit_code)
     log.error("%s", failure)
     return failure
@@ -352,7 +352,7 @@ def _reported(
     if failure is None:
         return Rendered(Markdown(text), [])
     # The command is kept in the note, because "exit 1" alone names nothing to go fix.
-    at_fault = _reported_at(Annotation(f"{command}: {failure}"), origin, ExitCode(1))
+    at_fault = _failure_at(Annotation(f"{command}: {failure}"), origin, ExitCode(1))
     return Rendered(Markdown(text), [at_fault])
 
 
@@ -382,7 +382,7 @@ def _render_target(target: Target, origin: Origin, timeout: TimeoutSeconds) -> R
 
 def _operational(failure: TransclusionFailure, origin: Origin) -> Rendered:
     note = Annotation(str(failure))
-    return Rendered(Markdown(marker(note)), [_reported_at(note, origin, ExitCode(2))])
+    return Rendered(Markdown(marker(note)), [_failure_at(note, origin, ExitCode(2))])
 
 
 # Declarations make the walk stateful, so blocks fold rather than map: each one sees the

@@ -277,12 +277,11 @@ def skills(
     vault = without_invisible_notes(index(input_dir))
 
     templates = _templates(input_dir, RelativePath(Path()))
-    ignored = (
-        Arr(_unclaimed(input_dir, templates))
-        .map(_report_ignored)
-        .filter(lambda outcome: outcome is not None)
-        .to_list()
-    )
+    ignored = [
+        outcome
+        for outcome in Arr(_unclaimed(input_dir, templates)).map(_report_ignored)
+        if outcome is not None
+    ]
 
     named, misnamed = _named(templates)
     unique, colliding = _unique(named)
@@ -324,6 +323,10 @@ def skills(
         written[artifact.source] = artifact.target
         log.info("%s %s into %s", artifact.verb, artifact.source, artifact.target)
 
+    # Counted before the report lands, because the report is the run describing itself
+    # rather than a skill it compiled.
+    compiled = Produced(len(written))
+
     if structural:
         refused = blocked(
             output_dir, tracked.destinations() | set(written.values()), reasons
@@ -344,7 +347,7 @@ def skills(
         *(Errored(failure) for failure in structural),
         *(Errored(failure) for failure in content),
     ]
-    summarise(Produced(len(written)), problems)
+    summarise(compiled, problems)
 
     # A structural failure is a content failure; 2 stays reserved for an impossible run.
     return ExitCode(max(worst(content), 1 if structural else 0))

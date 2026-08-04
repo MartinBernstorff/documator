@@ -30,7 +30,7 @@ def _parsed[T: BaseModel](model: type[T]) -> Callable[[str], T]:
 # thing worth interrupting for: silence means the run was clean.
 @app.callback()
 def root(
-    quiet: Annotated[bool, typer.Option("--quiet", "-q")] = False,
+    quiet: Annotated[bool, typer.Option("--quiet")] = False,
 ) -> None:
     if quiet:
         logging.getLogger("documator").setLevel(logging.WARNING)

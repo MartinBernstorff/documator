@@ -306,20 +306,23 @@ def test_log_lines_are_coloured_on_a_terminal(tmp_path: Path) -> None:
     assert "\x1b[" in logged
 
 
-def _stderr_of(arguments: list[str]) -> str:
-    return subprocess.run(
-        [sys.executable, "-m", "documator", *arguments],
-        capture_output=True,
-        text=True,
-    ).stderr
-
-
 def test_quiet_leaves_a_clean_run_silent(tmp_path: Path) -> None:
     build_tree(tmp_path, TreeLayout("in\n  note.md | hello\\n\nout"))
 
-    logged = _stderr_of(
-        ["--quiet", "render", str(tmp_path / "in"), str(tmp_path / "out")]
-    )
+    logged = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "documator",
+            "--quiet",
+            "render",
+            str(tmp_path / "in"),
+            str(tmp_path / "out"),
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stderr
 
     assert logged == ""
 
@@ -335,14 +338,24 @@ def test_quiet_keeps_warnings_errors_and_the_summary(tmp_path: Path) -> None:
         """),
     )
 
-    logged = _stderr_of(
-        ["--quiet", "skills", str(tmp_path / "in"), str(tmp_path / "out")]
-    )
+    logged = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "documator",
+            "--quiet",
+            "skills",
+            str(tmp_path / "in"),
+            str(tmp_path / "out"),
+        ],
+        capture_output=True,
+        text=True,
+    ).stderr
 
     assert re.sub(r"\d{2}:\d{2}:\d{2} ", "", logged) == snapshot("""\
 WARNING helper.py: ignored, move it into a SKILL.md folder to bundle it
 ERROR   Foo.md: "Foo" is not a valid skill name
-ERROR   1 file, 1 warning, 1 error
+ERROR   0 files, 1 warning, 1 error
 WARNING helper.py: ignored, move it into a SKILL.md folder to bundle it
 ERROR   Foo.md: "Foo" is not a valid skill name
 """)

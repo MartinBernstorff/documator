@@ -693,12 +693,30 @@ def test_the_summary_orders_warnings_before_errors(
             ),
             ("ERROR", 'Foo.md: "Foo" is not a valid skill name'),
             ("INFO", "compiled good.md into good/SKILL.md"),
-            ("ERROR", "2 files, 1 warning, 1 error"),
+            ("ERROR", "1 file, 1 warning, 1 error"),
             (
                 "WARNING",
                 "helper.py: ignored, move it into a SKILL.md folder to bundle it",
             ),
             ("ERROR", 'Foo.md: "Foo" is not a valid skill name'),
+        ]
+    )
+
+
+def test_the_error_report_is_not_counted_as_a_compiled_skill(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    build_tree(tmp_path, TreeLayout("in\n  Foo.md | # Foo\\n\nout"))
+
+    with caplog.at_level(logging.INFO, logger="documator"):
+        assert _skills(tmp_path / "in", tmp_path / "out") == 1
+
+    assert (tmp_path / "out" / "documator-errors.md").is_file()
+    assert caplog.messages == snapshot(
+        [
+            'Foo.md: "Foo" is not a valid skill name',
+            "0 files, 0 warnings, 1 error",
+            'Foo.md: "Foo" is not a valid skill name',
         ]
     )
 
@@ -1019,7 +1037,7 @@ def test_each_structural_reason_is_logged(
     assert caplog.messages == snapshot(
         [
             'Foo.md: "Foo" is not a valid skill name',
-            "1 file, 0 warnings, 1 error",
+            "0 files, 0 warnings, 1 error",
             'Foo.md: "Foo" is not a valid skill name',
         ]
     )

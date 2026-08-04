@@ -6,6 +6,7 @@ from iterpy import Arr
 
 log = logging.getLogger("documator")
 
+Count = NewType("Count", int)
 Produced = NewType("Produced", int)
 Noun = NewType("Noun", str)
 
@@ -45,7 +46,7 @@ type Problem = Warned | Errored
 
 @dataclass(frozen=True, slots=True)
 class Tally:
-    count: int
+    count: Count
     noun: Noun
 
     def __str__(self) -> str:
@@ -60,9 +61,9 @@ def summarise(produced: Produced, problems: list[Problem]) -> None:
     log.log(
         max((problem.level() for problem in problems), default=logging.INFO),
         "%s, %s, %s",
-        Tally(produced, Noun("file")),
-        Tally(len(warnings), Noun("warning")),
-        Tally(len(errors), Noun("error")),
+        Tally(Count(produced), Noun("file")),
+        Tally(Count(len(warnings)), Noun("warning")),
+        Tally(Count(len(errors)), Noun("error")),
     )
     # Warnings first and errors last, in discovery order, so the summary reads in the
     # same sequence as the lines it is summarising and the worst news ends up nearest

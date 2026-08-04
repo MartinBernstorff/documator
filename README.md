@@ -72,15 +72,9 @@ and would result in:
 
 ### Output
 
-Every problem is logged where it arises and again at the end of the run, so a long
-render does not bury its errors above the scrollback. The run closes with a count —
-`12 files, 1 warning, 2 errors` — followed by the warnings and then the errors, worst
-news nearest the prompt. Under `--watch` each recompile closes the same way, since a
-session has no other end to report at.
+Every problem is logged where it arises and again at the end of the run, so a long render does not bury its errors above the scrollback. The run closes with a count — `12 files, 1 warning, 2 errors` — followed by the warnings and then the errors, worst news nearest the prompt. Under `--watch` each recompile closes the same way, since a session has no other end to report at.
 
-Log lines are coloured by level when stderr is a terminal, and plain when it is a pipe or
-when `NO_COLOR` is set. `--quiet` drops the per-file chatter and keeps warnings, errors
-and the summary; a quiet run that prints nothing is a run that had nothing to report.
+Log lines are coloured by level when stderr is a terminal, and plain when it is a pipe or when `NO_COLOR` is set. `--quiet` drops the per-file chatter and keeps warnings, errors and the summary; a quiet run that prints nothing is a run that had nothing to report.
 
 ### Try it
 
