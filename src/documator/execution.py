@@ -71,6 +71,7 @@ def _capture(
         encoding="utf-8",
         errors="replace",
         start_new_session=True,
+        env=_terminal_free_env(),
     ) as process:
         try:
             output = CapturedOutput(process.communicate(timeout=timeout.root)[0])
@@ -90,6 +91,20 @@ def _killed(process: subprocess.Popen[str]) -> CapturedOutput:
     with contextlib.suppress(ProcessLookupError):
         os.killpg(process.pid, signal.SIGKILL)
     return CapturedOutput(process.communicate()[0])
+
+
+# A command that believes a terminal is watching writes escape sequences and cursor
+# moves into the document. The pipe alone is not enough of a hint: moon exports
+# STARBASE_FORCE_TTY to every task, so a nested `moon` overrides its own detection.
+def _terminal_free_env() -> dict[str, str]:
+    inherited = {
+        name: value
+        for name, value in os.environ.items()
+        if name not in ("STARBASE_FORCE_TTY", "FORCE_COLOR", "CLICOLOR_FORCE")
+    }
+    # Width is pinned too, else whoever renders decides how wide the committed
+    # document is.
+    return inherited | {"NO_COLOR": "1", "TERM": "dumb", "COLUMNS": "80"}
 
 
 def _annotated_body(capture: _Capture) -> CapturedOutput:

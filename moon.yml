@@ -101,7 +101,7 @@ tasks:
       - '@group(sources)'
 
   docs:
-    script: 'uv run documator render templates output'
+    script: 'uv run documator render templates .'
     inputs:
       - 'templates/**/*.md'
       - 'templates/**/*.yml'

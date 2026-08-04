@@ -2,7 +2,7 @@ pre-commit:
   piped: true
   commands:
     docs:
-      run: uv run documator render templates output
+      run: moon run documator:docs
       stage_fixed: true
     fix:
       priority: 1

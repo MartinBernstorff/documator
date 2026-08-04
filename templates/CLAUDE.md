@@ -2,9 +2,11 @@
 
 A documentation CLI. Python 3.14, packaged with `uv` (src layout), tasks orchestrated by moonrepo.
 
+We use GitHub as an issue tracker.
+
 ## Running tasks
 
-Always run tasks through **moon**, never the tool directly. This runs dependencies and caches aggressively. You can run via `moon run <task>`.
+Always run tasks through **moon**, never the tool directly. This runs dependencies and caches aggressively.
 
 ```
 !moon tasks
@@ -40,6 +42,3 @@ Run everything at once with `moon ci` — the same affected-only pass CI and the
 - Avoid spies and mocks. When you must substitute, use a fake — typically a fast in-memory implementation.
 - If a fake can drift from the real implementation, add a contract test that runs both against the same expectations.
 - Assert expected output with `inline_snapshot.snapshot(...)` rather than a hand-written literal, and record it with `moon run documator:snapshot`. Prefer one whole-value snapshot over several substring assertions. Do not snapshot a value whose point is that something is *absent*, or one carrying invisible characters — assert that directly instead.
-
-## Documentation
-Templates live in `templates/`, and are rendered into the root via the moon task.
