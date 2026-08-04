@@ -32,4 +32,5 @@ dev = [
     "pytest-xdist>=3.8.0",
     "ruff>=0.16.0",
     "tach>=0.35.0",
+    "zizmor>=1.29.0",
 ]

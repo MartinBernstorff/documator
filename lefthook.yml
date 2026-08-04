@@ -6,7 +6,7 @@ pre-commit:
       stage_fixed: true
     fix:
       priority: 1
-      run: moon run documator:lint-fix documator:format-fix
+      run: moon run documator:lint-fix documator:format-fix documator:zizmor-fix
       stage_fixed: true
     moon-ci:
       priority: 2

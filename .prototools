@@ -1,1 +1,5 @@
+actionlint = "1.7.12"
 uv = "0.9.24"
+
+[plugins.tools]
+actionlint = "https://raw.githubusercontent.com/Phault/proto-toml-plugins/main/actionlint/plugin.toml"
