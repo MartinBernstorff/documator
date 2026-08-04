@@ -150,6 +150,33 @@ def test_watch_debounces_a_burst_of_saves(
     assert recompiles() < 20
 
 
+def test_watch_summarises_every_recompile(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    caplog.set_level(logging.INFO, logger="documator")
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              note.md | original\\n
+            out
+        """),
+    )
+    input_dir, output_dir = InputDir(tmp_path / "in"), OutputDir(tmp_path / "out")
+
+    def summaries() -> int:
+        return sum(
+            "1 file, 0 warnings, 0 errors" in record.message
+            for record in caplog.records
+        )
+
+    # The initial render summarises once; a session has no other end to report at.
+    with _watching(input_dir, output_dir) as watcher:
+        watcher.wait_until(
+            lambda: summaries() >= 2, _rewrite(input_dir.root / "note.md", "edited\n")
+        )
+
+
 def test_watch_keeps_going_after_a_render_fails(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:

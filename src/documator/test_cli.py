@@ -1,3 +1,5 @@
+import os
+import pty
 import re
 import signal
 import subprocess
@@ -268,7 +270,82 @@ def test_log_lines_carry_a_timestamp_and_level(tmp_path: Path) -> None:
         check=True,
     ).stderr
 
-    assert re.fullmatch(r"\d{2}:\d{2}:\d{2} INFO    rendered note\.md\n", logged)
+    assert re.fullmatch(
+        r"\d{2}:\d{2}:\d{2} INFO    rendered note\.md\n"
+        r"\d{2}:\d{2}:\d{2} INFO    1 file, 0 warnings, 0 errors\n",
+        logged,
+    )
+
+
+def test_log_lines_are_coloured_on_a_terminal(tmp_path: Path) -> None:
+    build_tree(tmp_path, TreeLayout("in\n  note.md | hello\\n\nout"))
+
+    # A pty is the only thing colour keys off, so it is the only way to observe it.
+    reader, terminal = pty.openpty()
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "documator",
+            "render",
+            str(tmp_path / "in"),
+            str(tmp_path / "out"),
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=terminal,
+        check=True,
+        # The task runner sets NO_COLOR, which is honoured; this test is about the
+        # terminal, so it asks the question with that answer removed.
+        env={key: value for key, value in os.environ.items() if key != "NO_COLOR"},
+    )
+    # Read before the last writer closes: BSD ptys drop whatever is still buffered.
+    logged = os.read(reader, 4096).decode()
+    os.close(terminal)
+    os.close(reader)
+
+    assert "\x1b[" in logged
+
+
+def _stderr_of(arguments: list[str]) -> str:
+    return subprocess.run(
+        [sys.executable, "-m", "documator", *arguments],
+        capture_output=True,
+        text=True,
+    ).stderr
+
+
+def test_quiet_leaves_a_clean_run_silent(tmp_path: Path) -> None:
+    build_tree(tmp_path, TreeLayout("in\n  note.md | hello\\n\nout"))
+
+    logged = _stderr_of(
+        ["--quiet", "render", str(tmp_path / "in"), str(tmp_path / "out")]
+    )
+
+    assert logged == ""
+
+
+def test_quiet_keeps_warnings_errors_and_the_summary(tmp_path: Path) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              Foo.md | # Foo\\n
+              helper.py | print("hi")\\n
+            out
+        """),
+    )
+
+    logged = _stderr_of(
+        ["--quiet", "skills", str(tmp_path / "in"), str(tmp_path / "out")]
+    )
+
+    assert re.sub(r"\d{2}:\d{2}:\d{2} ", "", logged) == snapshot("""\
+WARNING helper.py: ignored, move it into a SKILL.md folder to bundle it
+ERROR   Foo.md: "Foo" is not a valid skill name
+ERROR   1 file, 1 warning, 1 error
+WARNING helper.py: ignored, move it into a SKILL.md folder to bundle it
+ERROR   Foo.md: "Foo" is not a valid skill name
+""")
 
 
 def test_a_failing_block_logs_at_error_level(tmp_path: Path) -> None:
@@ -294,7 +371,9 @@ def test_a_failing_block_logs_at_error_level(tmp_path: Path) -> None:
         text=True,
     ).stderr
 
-    assert re.search(r"^\d{2}:\d{2}:\d{2} ERROR   exit 3 in ", logged, re.MULTILINE)
+    assert re.search(
+        r"^\d{2}:\d{2}:\d{2} ERROR   note\.md: exit 3: exit 3$", logged, re.MULTILINE
+    )
 
 
 def test_watch_flag_keeps_rendering_after_the_first_pass(tmp_path: Path) -> None:

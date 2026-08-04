@@ -2,6 +2,7 @@ import logging
 from collections.abc import Callable
 from typing import Annotated
 
+import colorlog
 import typer
 from pydantic import BaseModel, ValidationError
 
@@ -25,8 +26,14 @@ def _parsed[T: BaseModel](model: type[T]) -> Callable[[str], T]:
     return parse
 
 
+# Raising the level rather than dropping the handler, so a quiet run still says the one
+# thing worth interrupting for: silence means the run was clean.
 @app.callback()
-def root() -> None: ...
+def root(
+    quiet: Annotated[bool, typer.Option("--quiet", "-q")] = False,
+) -> None:
+    if quiet:
+        logging.getLogger("documator").setLevel(logging.WARNING)
 
 
 @app.command()
@@ -60,12 +67,17 @@ def skills(
 
 
 def main(argv: list[str] | None = None) -> int:
-    logging.basicConfig(
-        level=logging.INFO,
-        # WARNING is the widest level we emit; padding keeps the messages aligned.
-        format="%(asctime)s %(levelname)-7s %(message)s",
-        datefmt="%H:%M:%S",
+    handler = logging.StreamHandler()
+    handler.setFormatter(
+        colorlog.ColoredFormatter(
+            # WARNING is the widest level we emit; padding keeps the messages aligned.
+            "%(log_color)s%(asctime)s %(levelname)-7s %(message)s",
+            datefmt="%H:%M:%S",
+            # Colour is for a human reading a terminal; a pipe gets the plain text.
+            no_color=not handler.stream.isatty(),
+        )
     )
+    logging.basicConfig(level=logging.INFO, handlers=[handler])
     command = typer.main.get_command(app)
     # Standalone mode makes click print its own usage errors, but it exits rather
     # than returning, so the code comes back as a SystemExit.

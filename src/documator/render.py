@@ -22,6 +22,7 @@ from documator.manifest import (
 )
 from documator.notice import annotated
 from documator.parsing import Markdown
+from documator.summary import Errored, Produced, summarise
 from documator.transclusion import NotePath, Target, index
 
 
@@ -73,4 +74,5 @@ def render(
     # file this run refused to write.
     write_manifest(output_dir, Manifest(written))
 
+    summarise(Produced(len(written)), [Errored(failure) for failure in failures])
     return worst(failures)

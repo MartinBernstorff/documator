@@ -45,6 +45,7 @@ from documator.structural import (
     report,
     unusable,
 )
+from documator.summary import Errored, Problem, Produced, Warned, summarise
 from documator.transclusion import (
     AttachmentPath,
     NotePath,
@@ -245,13 +246,24 @@ def _unclaimed(input_dir: InputDir, templates: list[_Template]) -> list[Relative
     )
 
 
+@dataclass(frozen=True, slots=True)
+class Ignored:
+    path: RelativePath
+
+    def __str__(self) -> str:
+        return f"{self.path}: ignored, move it into a SKILL.md folder to bundle it"
+
+
 # The flat layout gives a loose file no destination, so ignoring beats an error that
-# would make exit 2 permanent; the level stays graded so a real mistake stands out.
-def _report_ignored(path: RelativePath) -> None:
-    if classify(path) is PathClass.OPEN:
-        log.warning("ignored %s: move it into a SKILL.md folder to bundle it", path)
-    else:
+# would make exit 2 permanent; the level stays graded so a real mistake stands out. A
+# path that could never have been a skill is noise, so it is logged but not summarised.
+def _report_ignored(path: RelativePath) -> Ignored | None:
+    if classify(path) is not PathClass.OPEN:
         log.info("ignored %s", path)
+        return None
+    ignored = Ignored(path)
+    log.warning("%s", ignored)
+    return ignored
 
 
 def skills(
@@ -265,8 +277,12 @@ def skills(
     vault = without_invisible_notes(index(input_dir))
 
     templates = _templates(input_dir, RelativePath(Path()))
-    for ignored in _unclaimed(input_dir, templates):
-        _report_ignored(ignored)
+    ignored = (
+        Arr(_unclaimed(input_dir, templates))
+        .map(_report_ignored)
+        .filter(lambda outcome: outcome is not None)
+        .to_list()
+    )
 
     named, misnamed = _named(templates)
     unique, colliding = _unique(named)
@@ -322,6 +338,13 @@ def skills(
     # Written last and only for what really landed, so the manifest can never claim a
     # file this run refused to write.
     write_manifest(output_dir, Manifest(written))
+
+    problems: list[Problem] = [
+        *(Warned(warning) for warning in ignored),
+        *(Errored(failure) for failure in structural),
+        *(Errored(failure) for failure in content),
+    ]
+    summarise(Produced(len(written)), problems)
 
     # A structural failure is a content failure; 2 stays reserved for an impossible run.
     return ExitCode(max(worst(content), 1 if structural else 0))
