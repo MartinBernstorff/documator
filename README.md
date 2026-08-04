@@ -97,6 +97,18 @@ command named `var`, and fails as one.
 holding nothing but `!` is left alone, and a leading `![[` stays an embed rather than
 becoming a command.
 
+## Run output
+
+Log lines are colour-coded by level — plain for info, yellow for warnings, red for
+errors — whenever stderr is a terminal. Redirect it, or set `NO_COLOR`, and the same
+lines come out plain; `FORCE_COLOR` keeps them coloured either way. Colouring is
+[colorlog](https://pypi.org/project/colorlog/)'s job, including that detection.
+
+Every run ends with a summary of what went wrong, so a long run's problems survive the
+scrollback: a heading with the counts, then the warnings, then the errors last, where the
+terminal leaves them in view. A run with nothing to report says `no warnings or errors`.
+Under `--watch` the summary comes after every pass, not once at shutdown.
+
 For the current options, run:
 
 ```

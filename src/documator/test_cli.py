@@ -267,7 +267,11 @@ def test_log_lines_carry_a_timestamp_and_level(tmp_path: Path) -> None:
         check=True,
     ).stderr
 
-    assert re.fullmatch(r"\d{2}:\d{2}:\d{2} INFO    rendered note\.md\n", logged)
+    assert re.fullmatch(
+        r"\d{2}:\d{2}:\d{2} INFO    rendered note\.md\n"
+        r"\n── no warnings or errors ──\n",
+        logged,
+    )
 
 
 def test_a_failing_block_logs_at_error_level(tmp_path: Path) -> None:
@@ -294,6 +298,38 @@ def test_a_failing_block_logs_at_error_level(tmp_path: Path) -> None:
     ).stderr
 
     assert re.search(r"^\d{2}:\d{2}:\d{2} ERROR   exit 3 in ", logged, re.MULTILINE)
+
+
+def test_a_run_ends_with_its_problems_replayed_errors_last(tmp_path: Path) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              foo.md | ```\\n!exit 3\\n```\\n
+              notes.txt | loose\\n
+            out
+        """),
+    )
+
+    logged = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "documator",
+            "skills",
+            str(tmp_path / "in"),
+            str(tmp_path / "out"),
+        ],
+        capture_output=True,
+        text=True,
+    ).stderr
+
+    assert re.fullmatch(
+        r"\n── 1 warning, 1 error ──\n"
+        r"\d{2}:\d{2}:\d{2} WARNING ignored notes\.txt: .*\n"
+        r"\d{2}:\d{2}:\d{2} ERROR   exit 3 in foo\.md: .*\n",
+        logged[logged.index("\n── ") :],
+    )
 
 
 def test_watch_flag_keeps_rendering_after_the_first_pass(tmp_path: Path) -> None:

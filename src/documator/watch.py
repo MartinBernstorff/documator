@@ -1,10 +1,12 @@
 import logging
+import sys
 from threading import Event
 
 from watchfiles import watch as watch_paths
 
 from documator.domain import ExitCode, InputDir, OutputDir, TimeoutSeconds
 from documator.engine import directory_conflict, report_conflict
+from documator.logs import drain
 from documator.render import render
 
 DEBOUNCE_MS = 300
@@ -24,7 +26,7 @@ def watch(
     if conflict is not None:
         return report_conflict(conflict)
 
-    _render_swallowing_errors(input_dir, output_dir, timeout)
+    _render_pass(input_dir, output_dir, timeout)
     logger.info("Watching %s for changes", input_dir.root)
     for changes in watch_paths(
         input_dir.root,
@@ -34,16 +36,17 @@ def watch(
         raise_interrupt=False,
     ):
         logger.info("Re-rendering after %d change(s)", len(changes))
-        _render_swallowing_errors(input_dir, output_dir, timeout)
+        _render_pass(input_dir, output_dir, timeout)
 
     # A session reports whether it shut down cleanly; per-iteration outcomes are logged.
     return ExitCode(0)
 
 
-def _render_swallowing_errors(
+def _render_pass(
     input_dir: InputDir, output_dir: OutputDir, timeout: TimeoutSeconds
 ) -> None:
     try:
         render(input_dir, output_dir, timeout)
     except Exception:
         logger.exception("Render failed; still watching")
+    drain(sys.stderr)

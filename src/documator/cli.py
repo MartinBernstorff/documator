@@ -1,4 +1,4 @@
-import logging
+import sys
 from collections.abc import Callable
 from typing import Annotated
 
@@ -7,6 +7,7 @@ from pydantic import BaseModel, ValidationError
 
 from documator.domain import ExitCode, InputDir, OutputDir, TimeoutSeconds
 from documator.engine import DEFAULT_TIMEOUT
+from documator.logs import configure
 from documator.render import render as _render
 from documator.skills import skills as _skills
 from documator.watch import watch as _watch
@@ -56,12 +57,7 @@ def skills(
 
 
 def main(argv: list[str] | None = None) -> int:
-    logging.basicConfig(
-        level=logging.INFO,
-        # WARNING is the widest level we emit; padding keeps the messages aligned.
-        format="%(asctime)s %(levelname)-7s %(message)s",
-        datefmt="%H:%M:%S",
-    )
+    summary = configure(sys.stderr)
     command = typer.main.get_command(app)
     # Standalone mode makes click print its own usage errors, but it exits rather
     # than returning, so the code comes back as a SystemExit.
@@ -70,4 +66,6 @@ def main(argv: list[str] | None = None) -> int:
     except SystemExit as exit_signal:
         code = exit_signal.code
         return ExitCode(code if isinstance(code, int) else 0)
+    finally:
+        sys.stderr.write(summary.report())
     return ExitCode(0)
