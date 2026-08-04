@@ -526,7 +526,11 @@ def test_an_invisible_note_is_not_a_transclusion_target(
         assert _skills(tmp_path / "in", tmp_path / "out") == 2
 
     assert caplog.messages == snapshot(
-        ['no note matches transclusion "Secret" in foo.md']
+        [
+            'foo.md: no note matches transclusion "Secret"',
+            "1 file, 0 warnings, 1 error",
+            'foo.md: no note matches transclusion "Secret"',
+        ]
     )
 
 
@@ -622,9 +626,14 @@ def test_an_ignored_loose_file_is_logged_at_warning(
         [
             (
                 "WARNING",
-                "ignored helper.py: move it into a SKILL.md folder to bundle it",
+                "helper.py: ignored, move it into a SKILL.md folder to bundle it",
             ),
             ("INFO", "compiled foo.md into foo/SKILL.md"),
+            ("WARNING", "1 file, 1 warning, 0 errors"),
+            (
+                "WARNING",
+                "helper.py: ignored, move it into a SKILL.md folder to bundle it",
+            ),
         ]
     )
 
@@ -652,6 +661,62 @@ def test_an_ignored_inert_path_is_logged_at_info(
         [
             ("INFO", "ignored .DS_Store"),
             ("INFO", "ignored _notes/todo.txt"),
+            ("INFO", "0 files, 0 warnings, 0 errors"),
+        ]
+    )
+
+
+def test_the_summary_orders_warnings_before_errors(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              Foo.md | # Foo\\n
+              good.md | # Good\\n
+              helper.py | print("hi")\\n
+            out
+        """),
+    )
+
+    with caplog.at_level(logging.INFO, logger="documator"):
+        assert _skills(tmp_path / "in", tmp_path / "out") == 1
+
+    assert [
+        (record.levelname, record.message) for record in caplog.records
+    ] == snapshot(
+        [
+            (
+                "WARNING",
+                "helper.py: ignored, move it into a SKILL.md folder to bundle it",
+            ),
+            ("ERROR", 'Foo.md: "Foo" is not a valid skill name'),
+            ("INFO", "compiled good.md into good/SKILL.md"),
+            ("ERROR", "1 file, 1 warning, 1 error"),
+            (
+                "WARNING",
+                "helper.py: ignored, move it into a SKILL.md folder to bundle it",
+            ),
+            ("ERROR", 'Foo.md: "Foo" is not a valid skill name'),
+        ]
+    )
+
+
+def test_the_error_report_is_not_counted_as_a_compiled_skill(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    build_tree(tmp_path, TreeLayout("in\n  Foo.md | # Foo\\n\nout"))
+
+    with caplog.at_level(logging.INFO, logger="documator"):
+        assert _skills(tmp_path / "in", tmp_path / "out") == 1
+
+    assert (tmp_path / "out" / "documator-errors.md").is_file()
+    assert caplog.messages == snapshot(
+        [
+            'Foo.md: "Foo" is not a valid skill name',
+            "0 files, 0 warnings, 1 error",
+            'Foo.md: "Foo" is not a valid skill name',
         ]
     )
 
@@ -969,7 +1034,13 @@ def test_each_structural_reason_is_logged(
     with caplog.at_level(logging.ERROR, logger="documator"):
         assert _skills(tmp_path / "in", tmp_path / "out") == 1
 
-    assert caplog.messages == snapshot(['Foo.md: "Foo" is not a valid skill name'])
+    assert caplog.messages == snapshot(
+        [
+            'Foo.md: "Foo" is not a valid skill name',
+            "0 files, 0 warnings, 1 error",
+            'Foo.md: "Foo" is not a valid skill name',
+        ]
+    )
 
 
 def test_an_operational_failure_still_outranks_a_structural_one(tmp_path: Path) -> None:

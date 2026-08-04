@@ -102,7 +102,9 @@ def test_an_untracked_output_file_is_left_where_it_is(tmp_path: Path) -> None:
     )
 
 
-def test_an_untracked_file_at_a_target_path_blocks_the_write(tmp_path: Path) -> None:
+def test_an_untracked_file_at_a_target_path_blocks_the_write(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
     build_tree(
         tmp_path,
         TreeLayout("""
@@ -113,9 +115,17 @@ def test_an_untracked_file_at_a_target_path_blocks_the_write(tmp_path: Path) -> 
         """),
     )
 
-    assert _render(tmp_path / "in", tmp_path / "out") == 2
+    with caplog.at_level(logging.ERROR, logger="documator"):
+        assert _render(tmp_path / "in", tmp_path / "out") == 2
 
     assert_tree(tmp_path / "out", TreeLayout("note.md | mine\\n"))
+    assert caplog.messages == snapshot(
+        [
+            "note.md: refusing to overwrite: not written by documator",
+            "0 files, 0 warnings, 1 error",
+            "note.md: refusing to overwrite: not written by documator",
+        ]
+    )
 
 
 def test_an_untracked_file_where_a_parent_directory_belongs_blocks_the_write(
@@ -677,7 +687,8 @@ def test_logs_a_failing_block_where_it_arises(
         tmp_path,
         TreeLayout("""
             in
-              note.md | ```\\n!exit 3\\n```\\n
+              sub
+                note.md | ```\\n!false\\n```\\n
             out
         """),
     )
@@ -685,8 +696,58 @@ def test_logs_a_failing_block_where_it_arises(
     with caplog.at_level(logging.ERROR, logger="documator"):
         assert _render(tmp_path / "in", tmp_path / "out") == 1
 
-    assert "note.md" in caplog.text
-    assert "exit 3" in caplog.text
+    assert caplog.messages == snapshot(
+        [
+            "sub/note.md: false: exit 1",
+            "1 file, 0 warnings, 1 error",
+            "sub/note.md: false: exit 1",
+        ]
+    )
+
+
+def test_the_run_ends_with_a_summary_that_repeats_its_errors_last(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              note.md | ```\\n!false\\n```\\n
+              other.md | # Other\\n
+            out
+        """),
+    )
+
+    with caplog.at_level(logging.INFO, logger="documator"):
+        assert _render(tmp_path / "in", tmp_path / "out") == 1
+
+    assert [
+        (record.levelname, record.message) for record in caplog.records
+    ] == snapshot(
+        [
+            ("INFO", "executing false in note.md"),
+            ("ERROR", "note.md: false: exit 1"),
+            ("INFO", "rendered note.md"),
+            ("INFO", "rendered other.md"),
+            ("ERROR", "2 files, 0 warnings, 1 error"),
+            ("ERROR", "note.md: false: exit 1"),
+        ]
+    )
+
+
+def test_a_clean_run_ends_with_a_summary_at_info(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    build_tree(tmp_path, TreeLayout("in\n  note.md | # Note\\n\nout"))
+
+    with caplog.at_level(logging.INFO, logger="documator"):
+        assert _render(tmp_path / "in", tmp_path / "out") == 0
+
+    assert [
+        (record.levelname, record.message) for record in caplog.records
+    ] == snapshot(
+        [("INFO", "rendered note.md"), ("INFO", "1 file, 0 warnings, 0 errors")]
+    )
 
 
 def test_declared_variable_expands_in_a_later_command(tmp_path: Path) -> None:

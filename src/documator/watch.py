@@ -27,7 +27,8 @@ def watch(
     if conflict is not None:
         return report_conflict(conflict)
 
-    _compile_swallowing_errors(compile_tree, input_dir, output_dir, timeout)
+    if _interrupted(compile_tree, input_dir, output_dir, timeout):
+        return ExitCode(0)
     logger.info("Watching %s for changes", input_dir.root)
     for changes in watch_paths(
         input_dir.root,
@@ -37,19 +38,26 @@ def watch(
         raise_interrupt=False,
     ):
         logger.info("Recompiling after %d change(s)", len(changes))
-        _compile_swallowing_errors(compile_tree, input_dir, output_dir, timeout)
+        if _interrupted(compile_tree, input_dir, output_dir, timeout):
+            break
 
     # A session reports whether it shut down cleanly; per-iteration outcomes are logged.
     return ExitCode(0)
 
 
-def _compile_swallowing_errors(
+# Ctrl-C lands wherever it lands, and a compile is most of the time a session spends
+# running, so an interrupt inside one has to end the session as cleanly as one caught
+# between iterations — otherwise Ctrl-C is a clean stop only when it is well timed.
+def _interrupted(
     compile_tree: Compile,
     input_dir: InputDir,
     output_dir: OutputDir,
     timeout: TimeoutSeconds,
-) -> None:
+) -> bool:
     try:
         compile_tree(input_dir, output_dir, timeout)
+    except KeyboardInterrupt:
+        return True
     except Exception:
         logger.exception("Compile failed; still watching")
+    return False

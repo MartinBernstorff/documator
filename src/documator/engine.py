@@ -145,12 +145,14 @@ def _is_empty_dir(path: Path) -> bool:
     return path.is_dir() and not any(path.iterdir())
 
 
+# The target is the site the failure is filed under, which prints it; naming it here too
+# would say the path twice on every line.
 @dataclass(frozen=True, slots=True)
 class Untracked:
     target: DestinationPath
 
     def __str__(self) -> str:
-        return f"refusing to overwrite {self.target}: not written by documator"
+        return "refusing to overwrite: not written by documator"
 
 
 @dataclass(frozen=True, slots=True)
@@ -159,7 +161,7 @@ class Obstructed:
     ancestor: DestinationPath
 
     def __str__(self) -> str:
-        return f"refusing to write {self.target}: {self.ancestor} is not a directory"
+        return f"refusing to write: {self.ancestor} is not a directory"
 
 
 @dataclass(frozen=True, slots=True)
@@ -167,7 +169,7 @@ class Reserved:
     target: DestinationPath
 
     def __str__(self) -> str:
-        return f"refusing to write {self.target}: documator keeps its manifest there"
+        return "refusing to write: documator keeps its manifest there"
 
 
 type WriteRefusal = Untracked | Obstructed | Reserved
@@ -197,15 +199,24 @@ def blocked(
     refused = refusal(output_dir, owned, target)
     if refused is None:
         return None
-    log.error("%s", refused)
-    return Failure(Annotation(str(refused)), ExitCode(2))
+    failure = Failure(target, Annotation(str(refused)), ExitCode(2))
+    log.error("%s", failure)
+    return failure
+
+
+# Where a failure arose: a note being rendered, or the path a write was refused at.
+type Site = NotePath | DestinationPath
 
 
 # An unresolvable transclusion stops the engine (2); a bad command only fails content.
 @dataclass(frozen=True, slots=True)
 class Failure:
+    site: Site
     note: Annotation
     exit_code: ExitCode
+
+    def __str__(self) -> str:
+        return f"{self.site}: {self.note}"
 
 
 @dataclass(frozen=True, slots=True)
@@ -311,8 +322,8 @@ def _expanded(command: Command, scope: Scope) -> Command | Undefined:
 
 
 def _authoring_error(text: Markdown, note: Annotation, origin: Origin) -> Rendered:
-    log.error("%s in %s", note, origin.note())
-    return Rendered(Markdown(f"{text}\n{marker(note)}\n"), [Failure(note, ExitCode(1))])
+    failure = _failure_at(note, origin, ExitCode(1))
+    return Rendered(Markdown(f"{text}\n{marker(note)}\n"), [failure])
 
 
 # The echoed source is already a span, so the marker follows it rather than breaking the
@@ -320,8 +331,16 @@ def _authoring_error(text: Markdown, note: Annotation, origin: Origin) -> Render
 def _inline_authoring_error(
     text: Markdown, note: Annotation, origin: Origin
 ) -> Rendered:
-    log.error("%s in %s", note, origin.note())
-    return Rendered(Markdown(f"{text} {marker(note)}"), [Failure(note, ExitCode(1))])
+    failure = _failure_at(note, origin, ExitCode(1))
+    return Rendered(Markdown(f"{text} {marker(note)}"), [failure])
+
+
+# The failure is built before it is logged, so the line a reader sees inline is the same
+# string the end-of-run summary replays.
+def _failure_at(note: Annotation, origin: Origin, exit_code: ExitCode) -> Failure:
+    failure = Failure(origin.note(), note, exit_code)
+    log.error("%s", failure)
+    return failure
 
 
 def _reported(
@@ -332,8 +351,9 @@ def _reported(
 ) -> Rendered:
     if failure is None:
         return Rendered(Markdown(text), [])
-    log.error("%s in %s: %s", command, origin.note(), failure)
-    return Rendered(Markdown(text), [Failure(failure, ExitCode(1))])
+    # The command is kept in the note, because "exit 1" alone names nothing to go fix.
+    at_fault = _failure_at(Annotation(f"{command}: {failure}"), origin, ExitCode(1))
+    return Rendered(Markdown(text), [at_fault])
 
 
 def _render_transclusion(
@@ -362,8 +382,7 @@ def _render_target(target: Target, origin: Origin, timeout: TimeoutSeconds) -> R
 
 def _operational(failure: TransclusionFailure, origin: Origin) -> Rendered:
     note = Annotation(str(failure))
-    log.error("%s in %s", note, origin.note())
-    return Rendered(Markdown(marker(note)), [Failure(note, ExitCode(2))])
+    return Rendered(Markdown(marker(note)), [_failure_at(note, origin, ExitCode(2))])
 
 
 # Declarations make the walk stateful, so blocks fold rather than map: each one sees the
