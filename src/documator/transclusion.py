@@ -12,6 +12,37 @@ from documator.inert import PathClass, classify
 
 Reference = NewType("Reference", str)
 CanonicalName = NewType("CanonicalName", tuple[str, ...])
+HeadingKey = NewType("HeadingKey", str)
+
+
+# Two spellings of one heading are one heading, so identity is the normalised form
+# while the text stays as written: a reference copied out of a heading — markup and
+# all — resolves to it, and `#Usage` embedding `#usage` is still a cycle.
+class HeadingText(RootModel[str]):
+    @override
+    def __str__(self) -> str:
+        return self.root
+
+    def key(self) -> HeadingKey:
+        return HeadingKey(" ".join(_bare(self).split()).casefold())
+
+    @override
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, HeadingText) and self.key() == other.key()
+
+    @override
+    def __hash__(self) -> int:
+        return hash(self.key())
+
+
+def _bare(text: HeadingText) -> str:
+    aliased = re.sub(r"\[\[[^\[\]|]*\|([^\[\]]*)\]\]", r"\1", text.root)
+    linked = re.sub(r"\[\[([^\[\]]*)\]\]", r"\1", aliased)
+    inlined = re.sub(r"!?\[([^\[\]]*)\]\([^()]*\)", r"\1", linked)
+    return re.sub(r"[*_~`]", "", inlined)
+
+
+HeadingPath = NewType("HeadingPath", tuple[HeadingText, ...])
 
 
 # Held relative to the vault root, so a reference, a cycle chain and an ambiguity
@@ -57,20 +88,80 @@ class Ambiguous:
         return f'transclusion "{self.reference}" matches {named}'
 
 
+# The whole note is an empty path rather than a separate case, so a cycle, an origin and
+# a working directory all read the same whether or not a section was named.
 @dataclass(frozen=True, slots=True)
-class FragmentUnsupported:
+class Target:
+    note: NotePath
+    path: HeadingPath
+
+    @classmethod
+    def whole(cls, note: NotePath) -> Target:
+        return cls(note, HeadingPath(()))
+
+    def into(self, segment: HeadingText) -> Target:
+        return Target(self.note, HeadingPath((*self.path, segment)))
+
+    def __str__(self) -> str:
+        return "#".join((str(self.note), *(str(part) for part in self.path)))
+
+
+@dataclass(frozen=True, slots=True)
+class EmptySection:
     reference: Reference
 
     def __str__(self) -> str:
-        return f'transclusion "{self.reference}" names a fragment, which is unsupported'
+        return f'transclusion "{self.reference}" names an empty section'
+
+
+@dataclass(frozen=True, slots=True)
+class BlockReferenceUnsupported:
+    reference: Reference
+
+    def __str__(self) -> str:
+        return (
+            f'transclusion "{self.reference}" names a block reference, '
+            "which is unsupported"
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class NoSection:
+    searched: Target
+    wanted: HeadingText
+    available: tuple[HeadingText, ...]
+
+    def __str__(self) -> str:
+        where = "under" if self.searched.path else "in"
+        has = (
+            ", ".join(str(heading) for heading in self.available)
+            if self.available
+            else "nothing nested there"
+        )
+        return f'no section "{self.wanted}" {where} {self.searched}; it has {has}'
+
+
+@dataclass(frozen=True, slots=True)
+class AmbiguousSection:
+    searched: Target
+    wanted: HeadingText
+
+    def __str__(self) -> str:
+        matched = self.searched.into(self.wanted)
+        return f"section {matched} matches more than one heading"
+
+
+type SectionFailure = NoSection | AmbiguousSection
 
 
 @dataclass(frozen=True, slots=True)
 class Cycle:
-    chain: tuple[NotePath, ...]
+    chain: tuple[Target, ...]
 
     def __str__(self) -> str:
-        return "transclusion cycle: " + " -> ".join(str(note) for note in self.chain)
+        return "transclusion cycle: " + " -> ".join(
+            str(target) for target in self.chain
+        )
 
 
 # An `![[image.png]]` embed is Obsidian's, not ours, so it goes back out as it came in.
@@ -82,8 +173,15 @@ class NonNoteEmbed:
         return f"![[{self.reference}]]"
 
 
-type TransclusionFailure = NoMatch | Ambiguous | FragmentUnsupported | Cycle
-type Resolution = NotePath | NonNoteEmbed | TransclusionFailure
+type TransclusionFailure = (
+    NoMatch
+    | Ambiguous
+    | EmptySection
+    | BlockReferenceUnsupported
+    | SectionFailure
+    | Cycle
+)
+type Resolution = Target | NonNoteEmbed | TransclusionFailure
 
 
 @dataclass(frozen=True, slots=True)
@@ -137,22 +235,56 @@ def without_invisible_notes(vault: Vault) -> Vault:
 
 
 def resolve(
-    vault: Vault, reference: Reference, entered: tuple[NotePath, ...]
+    vault: Vault, reference: Reference, entered: tuple[Target, ...]
 ) -> Resolution:
-    if "#" in reference:
-        return FragmentUnsupported(reference)
-    wanted = _canonical(reference)
+    addressed = _addressed(reference)
+    wanted = _canonical(addressed.named)
     if not wanted:
         return NoMatch(reference)
     candidates = Arr(vault.notes).filter(lambda note: _matches(note, wanted)).to_list()
     if len(candidates) > 1:
         return Ambiguous(reference, tuple(candidates))
-    if len(candidates) == 1:
-        note = candidates[0]
-        return Cycle((*entered, note)) if note in entered else note
-    if _attached(vault, reference):
-        return NonNoteEmbed(reference)
-    return NoMatch(reference)
+    if not candidates:
+        # An attachment's fragment is Obsidian's to read — a PDF page, say — so it is
+        # never judged as a heading path, whatever shape it has.
+        if _attached(vault, addressed.named):
+            return NonNoteEmbed(reference)
+        return NoMatch(reference)
+    unsupported = _unsupported(reference, addressed.path)
+    if unsupported is not None:
+        return unsupported
+    target = Target(candidates[0], addressed.path)
+    return Cycle((*entered, target)) if target in entered else target
+
+
+def _unsupported(
+    reference: Reference, path: HeadingPath
+) -> BlockReferenceUnsupported | EmptySection | None:
+    # A caret is only a block id when it is the whole fragment; inside a path it is just
+    # a segment that will miss, because Obsidian has no nested block reference either.
+    if len(path) == 1 and str(path[0]).startswith("^"):
+        return BlockReferenceUnsupported(reference)
+    if not all(str(segment) for segment in path):
+        return EmptySection(reference)
+    return None
+
+
+@dataclass(frozen=True, slots=True)
+class _Address:
+    named: Reference
+    path: HeadingPath
+
+
+# Split on every `#`, so a heading path reaches nested sections the way Obsidian's does.
+# The price is Obsidian's own: a heading whose text contains a `#` is unreachable.
+def _addressed(reference: Reference) -> _Address:
+    # An embed renders the target, never its alias, so the display text is dropped
+    # rather than left to poison the heading it is glued to.
+    segments = reference.split("|")[0].split("#")
+    return _Address(
+        Reference(segments[0]),
+        HeadingPath(tuple(HeadingText(segment.strip()) for segment in segments[1:])),
+    )
 
 
 # Only an attachment that really exists earns a passthrough; otherwise a dotted note

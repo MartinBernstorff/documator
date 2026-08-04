@@ -36,10 +36,12 @@ from documator.parsing import (
     TransclusionBlock,
     parse,
 )
+from documator.sections import section
 from documator.transclusion import (
     NonNoteEmbed,
     NotePath,
     Reference,
+    Target,
     TransclusionFailure,
     Vault,
     resolve,
@@ -216,16 +218,16 @@ class Rendered:
 @dataclass(frozen=True, slots=True)
 class Origin:
     vault: Vault
-    chain: tuple[NotePath, ...]
+    chain: tuple[Target, ...]
 
     def note(self) -> NotePath:
-        return self.chain[-1]
+        return self.chain[-1].note
 
     def working_dir(self) -> WorkingDir:
         return self.vault.beside(self.note())
 
-    def entered(self, note: NotePath) -> Origin:
-        return Origin(self.vault, (*self.chain, note))
+    def entered(self, target: Target) -> Origin:
+        return Origin(self.vault, (*self.chain, target))
 
 
 def worst(failures: list[Failure]) -> ExitCode:
@@ -340,16 +342,22 @@ def _render_transclusion(
     resolution = resolve(origin.vault, reference, origin.chain)
     if isinstance(resolution, NonNoteEmbed):
         return Rendered(Markdown(str(resolution)), [])
-    if isinstance(resolution, NotePath):
-        log.info("transcluding %s into %s", resolution, origin.note())
-        # The note's own frontmatter describes the note, not the text it lends out, so
-        # only its body crosses the boundary.
-        return render_markdown(
-            partition(Markdown(origin.vault.read(resolution))).body,
-            origin.entered(resolution),
-            timeout,
-        )
+    if isinstance(resolution, Target):
+        return _render_target(resolution, origin, timeout)
     return _operational(resolution, origin)
+
+
+def _render_target(target: Target, origin: Origin, timeout: TimeoutSeconds) -> Rendered:
+    log.info("transcluding %s into %s", target, origin.note())
+    source = Markdown(origin.vault.read(target.note))
+    # The note's own frontmatter describes the note, not the text it lends out, so only
+    # its body crosses the boundary.
+    lent = partition(source).body if not target.path else section(source, target)
+    # Tested on the markdown rather than on each failure type, so a section failure
+    # added later cannot slip through and be rendered as if it were a body.
+    if not isinstance(lent, str):
+        return _operational(lent, origin)
+    return render_markdown(lent, origin.entered(target), timeout)
 
 
 def _operational(failure: TransclusionFailure, origin: Origin) -> Rendered:
