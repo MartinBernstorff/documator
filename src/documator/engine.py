@@ -23,6 +23,7 @@ from documator.execution import (
     execute_span,
     marker,
 )
+from documator.frontmatter import partition
 from documator.manifest import DestinationPath, Manifest, manifest_path, reserved
 from documator.parsing import (
     Block,
@@ -341,8 +342,10 @@ def _render_transclusion(
         return Rendered(Markdown(str(resolution)), [])
     if isinstance(resolution, NotePath):
         log.info("transcluding %s into %s", resolution, origin.note())
+        # The note's own frontmatter describes the note, not the text it lends out, so
+        # only its body crosses the boundary.
         return render_markdown(
-            Markdown(origin.vault.read(resolution)),
+            partition(Markdown(origin.vault.read(resolution))).body,
             origin.entered(resolution),
             timeout,
         )
