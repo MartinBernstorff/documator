@@ -27,7 +27,7 @@ def watch(
     if conflict is not None:
         return report_conflict(conflict)
 
-    _swallowing_errors(compile_tree, input_dir, output_dir, timeout)
+    _compile_swallowing_errors(compile_tree, input_dir, output_dir, timeout)
     logger.info("Watching %s for changes", input_dir.root)
     for changes in watch_paths(
         input_dir.root,
@@ -37,13 +37,13 @@ def watch(
         raise_interrupt=False,
     ):
         logger.info("Recompiling after %d change(s)", len(changes))
-        _swallowing_errors(compile_tree, input_dir, output_dir, timeout)
+        _compile_swallowing_errors(compile_tree, input_dir, output_dir, timeout)
 
     # A session reports whether it shut down cleanly; per-iteration outcomes are logged.
     return ExitCode(0)
 
 
-def _swallowing_errors(
+def _compile_swallowing_errors(
     compile_tree: Compile,
     input_dir: InputDir,
     output_dir: OutputDir,

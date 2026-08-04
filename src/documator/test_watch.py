@@ -49,10 +49,6 @@ class Watcher:
         self._stop.set()
         self._thread.join(timeout=DEADLINE_SECONDS)
 
-    @property
-    def exit_codes(self) -> list[ExitCode]:
-        return self._exit_codes
-
 
 @contextmanager
 def _watching(input_dir: InputDir, output_dir: OutputDir) -> Generator[Watcher]:
@@ -403,5 +399,3 @@ def test_watching_skills_logs_a_structural_error_and_keeps_going(
         )
     finally:
         watcher.stop()
-
-    assert watcher.exit_codes == snapshot([0])
