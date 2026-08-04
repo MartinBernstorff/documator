@@ -150,6 +150,25 @@ def test_watch_debounces_a_burst_of_saves(
     assert recompiles() < 20
 
 
+def test_an_interrupt_during_a_compile_ends_the_session_cleanly(
+    tmp_path: Path,
+) -> None:
+    build_tree(tmp_path, TreeLayout("in\n  note.md | original\\n\nout"))
+
+    def interrupted(_input: InputDir, _output: OutputDir, _timeout: object) -> ExitCode:
+        raise KeyboardInterrupt
+
+    assert (
+        watch(
+            interrupted,
+            InputDir(tmp_path / "in"),
+            OutputDir(tmp_path / "out"),
+            DEFAULT_TIMEOUT,
+        )
+        == 0
+    )
+
+
 def test_watch_summarises_every_recompile(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
