@@ -1,6 +1,7 @@
 import time
 from pathlib import Path
 
+import pytest
 from inline_snapshot import snapshot
 
 from documator.domain import TimeoutSeconds, WorkingDir
@@ -408,3 +409,21 @@ def test_runs_a_span_in_the_given_working_directory(tmp_path: Path) -> None:
     )
 
     assert output.span == snapshot("`neighbour`")
+
+
+def test_hides_the_terminal_from_the_command(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("STARBASE_FORCE_TTY", "true")
+
+    output = execute_block(
+        Command('echo "tty=${STARBASE_FORCE_TTY-unset} color=${NO_COLOR-unset}"'),
+        WorkingDir(Path.cwd()),
+        TimeoutSeconds(10),
+    )
+
+    assert output.block == snapshot("""\
+```
+tty=unset color=1
+```
+""")
