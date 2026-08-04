@@ -111,10 +111,10 @@ def _segments(lines: list[Line]) -> Iterator[_Segment]:
     prose: list[Line] = []
     index = LineIndex(0)
     while index < len(lines):
-        delimiter = _opening_delimiter(lines[index])
+        delimiter = opening_delimiter(lines[index])
         # A delimiter that closes its own bang span on this line is a span, not a fence
         # that happens to never close.
-        if delimiter is None or _opens_a_bang_span(lines[index]):
+        if delimiter is None or opens_a_bang_span(lines[index]):
             prose.append(lines[index])
             index = LineIndex(index + 1)
             continue
@@ -224,7 +224,7 @@ def _unescaped(span: _Span) -> str:
 
 # Scoped to the leading run: a span later on the line is part of a fence's info string,
 # and demoting that whole fence to prose would execute its body.
-def _opens_a_bang_span(line: Line) -> bool:
+def opens_a_bang_span(line: Line) -> bool:
     span = _closed_span(_tokens(Markdown(line)), TokenIndex(0))
     return span is not None and _is_bang_span(span.content)
 
@@ -251,7 +251,7 @@ def _prose_or_embed(part: tuple[int, str]) -> Block:
     return PassthroughBlock(Markdown(part[1]))
 
 
-def _opening_delimiter(line: Line) -> Delimiter | None:
+def opening_delimiter(line: Line) -> Delimiter | None:
     opening = re.match(r"^(?P<delimiter>`{3,}|~{3,})", line)
     return None if opening is None else Delimiter(opening["delimiter"])
 
@@ -262,12 +262,12 @@ def _index_after_fence(
     closings = (
         LineIndex(offset + 1)
         for offset, line in enumerate(lines)
-        if offset > opened_at and _closes(line, delimiter)
+        if offset > opened_at and closes(line, delimiter)
     )
     return next(closings, None)
 
 
-def _closes(line: Line, delimiter: Delimiter) -> bool:
+def closes(line: Line, delimiter: Delimiter) -> bool:
     candidate = line.rstrip()
     return len(candidate) >= len(delimiter) and candidate == delimiter[0] * len(
         candidate

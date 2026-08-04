@@ -22,7 +22,7 @@ from documator.manifest import (
 )
 from documator.notice import annotated
 from documator.parsing import Markdown
-from documator.transclusion import NotePath, index
+from documator.transclusion import NotePath, Target, index
 
 
 def render(
@@ -59,7 +59,7 @@ def render(
         if source.suffix.lower() == ".md":
             rendered = render_markdown(
                 Markdown(source.read_text(encoding="utf-8")),
-                Origin(vault, (NotePath(relative),)),
+                Origin(vault, (Target.whole(NotePath(relative)),)),
                 timeout,
             )
             target.write_text(annotated(rendered.text, template), encoding="utf-8")

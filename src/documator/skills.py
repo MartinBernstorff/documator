@@ -48,6 +48,7 @@ from documator.structural import (
 from documator.transclusion import (
     AttachmentPath,
     NotePath,
+    Target,
     Vault,
     index,
     without_invisible_notes,
@@ -129,7 +130,8 @@ def _artifacts(
 ) -> list[_Artifact]:
     derived = validated.template.derived
     note = NotePath(derived.source)
-    rendered = render_markdown(validated.authored.body, Origin(vault, (note,)), timeout)
+    origin = Origin(vault, (Target.whole(note),))
+    rendered = render_markdown(validated.authored.body, origin, timeout)
     compiled = _Artifact(
         _Verb.COMPILED,
         TemplatePath(derived.source),
@@ -164,7 +166,9 @@ def _bundled(
     note = NotePath(path)
     # A bundled note is a document, not a skill, so it renders without frontmatter.
     rendered = render_markdown(
-        Markdown(vault.read(note)), Origin(vault, (note,)), timeout
+        Markdown(vault.read(note)),
+        Origin(vault, (Target.whole(note),)),
+        timeout,
     )
     return _Artifact(_Verb.BUNDLED, source, target, rendered.text, rendered.failures)
 
