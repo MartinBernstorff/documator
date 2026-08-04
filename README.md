@@ -12,8 +12,13 @@ uv sync
 
 ```
 documator render INPUT_DIR OUTPUT_DIR [--watch] [--timeout SECONDS]
-documator skills INPUT_DIR OUTPUT_DIR [--timeout SECONDS]
+documator skills INPUT_DIR OUTPUT_DIR [--watch] [--timeout SECONDS]
 ```
+
+`--watch` compiles once, then recompiles the whole tree on every change under
+`INPUT_DIR`. A failing iteration is logged and the session carries on — malformed input is
+not a reason to stop the world mid-session — so the exit code reports the shutdown, not
+the last pass: a clean stop is 0 regardless of what any iteration made of the tree.
 
 `render` mirrors the input tree. `skills` compiles the same templates into the flat
 `<skill-name>/SKILL.md` layout Claude's skill loader expects: nesting in the input tree
@@ -110,10 +115,19 @@ uv run documator render --help
 ### Try it
 
 ```sh
-mkdir -p docs out
-echo '# Title' > docs/index.md
+mkdir -p docs/guides/plan/references out compiled
+printf '# Review\n\nRead the diff before the description.\n' > docs/guides/review.md
+printf -- '---\ndescription: Plan a change\n---\n# Plan\n' > docs/guides/plan/SKILL.md
+echo '# Spec' > docs/guides/plan/references/spec.md
 uv run documator render docs out
+uv run documator skills docs compiled
 ```
+
+Two layouts over one tree. `render` mirrors it into `out/`, so `guides/review.md` stays
+`guides/review.md`. `skills` flattens it into `compiled/`: the bare `guides/review.md`
+becomes `review/SKILL.md` with a name-derived `description`, and the `guides/plan/`
+folder becomes `plan/SKILL.md` — carrying its declared `description` through — with
+`references/spec.md` bundled beside it as `plan/references/spec.md`.
 
 This block is extracted verbatim and run by `test_readme.py`.
 

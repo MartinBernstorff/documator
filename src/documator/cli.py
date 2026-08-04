@@ -39,19 +39,23 @@ def render(
         typer.Option("--timeout", metavar="SECONDS", parser=_parsed(TimeoutSeconds)),
     ] = DEFAULT_TIMEOUT,
 ) -> None:
-    run = _watch if watch else _render
-    raise typer.Exit(run(input_dir, output_dir, timeout))
+    if watch:
+        raise typer.Exit(_watch(_render, input_dir, output_dir, timeout))
+    raise typer.Exit(_render(input_dir, output_dir, timeout))
 
 
 @app.command()
 def skills(
     input_dir: Annotated[InputDir, typer.Argument(parser=_parsed(InputDir))],
     output_dir: Annotated[OutputDir, typer.Argument(parser=_parsed(OutputDir))],
+    watch: Annotated[bool, typer.Option("--watch")] = False,
     timeout: Annotated[
         TimeoutSeconds,
         typer.Option("--timeout", metavar="SECONDS", parser=_parsed(TimeoutSeconds)),
     ] = DEFAULT_TIMEOUT,
 ) -> None:
+    if watch:
+        raise typer.Exit(_watch(_skills, input_dir, output_dir, timeout))
     raise typer.Exit(_skills(input_dir, output_dir, timeout))
 
 

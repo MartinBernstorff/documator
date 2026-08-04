@@ -10,8 +10,10 @@ from inline_snapshot import snapshot
 
 from documator.domain import ExitCode, InputDir, OutputDir
 from documator.engine import DEFAULT_TIMEOUT
+from documator.render import render
+from documator.skills import skills
 from documator.tree_layout import TreeLayout, assert_tree, build_tree
-from documator.watch import watch
+from documator.watch import Compile, watch
 
 POLL_SECONDS = 0.05
 DEADLINE_SECONDS = 10.0
@@ -20,12 +22,14 @@ Nudge = Callable[[int], None]
 
 
 class Watcher:
-    def __init__(self, input_dir: InputDir, output_dir: OutputDir) -> None:
+    def __init__(
+        self, compile_tree: Compile, input_dir: InputDir, output_dir: OutputDir
+    ) -> None:
         self._stop = Event()
         self._exit_codes: list[ExitCode] = []
         self._thread = Thread(
             target=lambda: self._exit_codes.append(
-                watch(input_dir, output_dir, DEFAULT_TIMEOUT, self._stop)
+                watch(compile_tree, input_dir, output_dir, DEFAULT_TIMEOUT, self._stop)
             ),
             daemon=True,
         )
@@ -48,7 +52,7 @@ class Watcher:
 
 @contextmanager
 def _watching(input_dir: InputDir, output_dir: OutputDir) -> Generator[Watcher]:
-    watcher = Watcher(input_dir, output_dir)
+    watcher = Watcher(render, input_dir, output_dir)
     try:
         # Yield only once the initial render has landed, so anything a test observes
         # afterwards can only have come from a re-render.
@@ -132,18 +136,18 @@ def test_watch_debounces_a_burst_of_saves(
     input_dir, output_dir = InputDir(tmp_path / "in"), OutputDir(tmp_path / "out")
     note = input_dir.root / "note.md"
 
-    def re_renders() -> int:
-        return sum("Re-rendering" in record.message for record in caplog.records)
+    def recompiles() -> int:
+        return sum("Recompiling" in record.message for record in caplog.records)
 
     def burst(nudge: int) -> None:
         for write in range(20):
             note.write_text(f"change {nudge}.{write}\n")
 
     with _watching(input_dir, output_dir) as watcher:
-        watcher.wait_until(lambda: re_renders() >= 1, burst)
+        watcher.wait_until(lambda: recompiles() >= 1, burst)
 
     # 20 writes inside one ~300 ms window must not each earn their own render.
-    assert re_renders() < 20
+    assert recompiles() < 20
 
 
 def test_watch_keeps_going_after_a_render_fails(
@@ -161,8 +165,8 @@ def test_watch_keeps_going_after_a_render_fails(
     input_dir, output_dir = InputDir(tmp_path / "in"), OutputDir(tmp_path / "out")
     unreadable = input_dir.root / "locked.md"
 
-    def render_failed() -> bool:
-        return any("Render failed" in record.message for record in caplog.records)
+    def compile_failed() -> bool:
+        return any("Compile failed" in record.message for record in caplog.records)
 
     def lock(nudge: int) -> None:
         if not unreadable.exists():
@@ -178,7 +182,7 @@ def test_watch_keeps_going_after_a_render_fails(
         (input_dir.root / "after.md").write_text("recovered\n")
 
     with _watching(input_dir, output_dir) as watcher:
-        watcher.wait_until(render_failed, lock)
+        watcher.wait_until(compile_failed, lock)
         watcher.wait_until(
             _holds(
                 output_dir.root / "after.md",
@@ -201,7 +205,11 @@ def test_watch_renders_once_before_any_change(tmp_path: Path) -> None:
     stopped.set()
 
     exit_code = watch(
-        InputDir(tmp_path / "in"), OutputDir(tmp_path / "out"), DEFAULT_TIMEOUT, stopped
+        render,
+        InputDir(tmp_path / "in"),
+        OutputDir(tmp_path / "out"),
+        DEFAULT_TIMEOUT,
+        stopped,
     )
 
     assert exit_code == 0
@@ -225,7 +233,9 @@ def test_a_directory_conflict_exits_two_without_watching(tmp_path: Path) -> None
     nested = tmp_path / "in" / "out"
 
     # No stop_event: reaching the watch loop at all would hang the test.
-    assert watch(InputDir(nested.parent), OutputDir(nested), DEFAULT_TIMEOUT) == 2
+    assert (
+        watch(render, InputDir(nested.parent), OutputDir(nested), DEFAULT_TIMEOUT) == 2
+    )
 
 
 def test_a_failing_block_does_not_taint_a_clean_shutdown(tmp_path: Path) -> None:
@@ -241,7 +251,11 @@ def test_a_failing_block_does_not_taint_a_clean_shutdown(tmp_path: Path) -> None
     stopped.set()
 
     exit_code = watch(
-        InputDir(tmp_path / "in"), OutputDir(tmp_path / "out"), DEFAULT_TIMEOUT, stopped
+        render,
+        InputDir(tmp_path / "in"),
+        OutputDir(tmp_path / "out"),
+        DEFAULT_TIMEOUT,
+        stopped,
     )
 
     assert exit_code == 0
@@ -274,6 +288,7 @@ def test_a_render_that_raises_is_logged_but_shuts_down_cleanly(
 
     try:
         exit_code = watch(
+            render,
             InputDir(tmp_path / "in"),
             OutputDir(tmp_path / "out"),
             DEFAULT_TIMEOUT,
@@ -284,5 +299,103 @@ def test_a_render_that_raises_is_logged_but_shuts_down_cleanly(
 
     assert exit_code == 0
     assert [record.message for record in caplog.records] == snapshot(
-        ["Render failed; still watching"]
+        ["Compile failed; still watching"]
     )
+
+
+def test_watching_skills_compiles_once_and_shuts_down_cleanly(tmp_path: Path) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              foo.md | # Foo\\n
+            out
+        """),
+    )
+    stopped = Event()
+    stopped.set()
+
+    exit_code = watch(
+        skills,
+        InputDir(tmp_path / "in"),
+        OutputDir(tmp_path / "out"),
+        DEFAULT_TIMEOUT,
+        stopped,
+    )
+
+    assert exit_code == 0
+    assert (tmp_path / "out" / "foo" / "SKILL.md").read_text() == snapshot("""\
+---
+name: foo
+description: foo
+---
+<!-- Generated by documator from foo.md — edit the template, not this file. -->
+# Foo
+""")
+
+
+def test_watching_skills_recompiles_the_whole_tree_on_a_change(tmp_path: Path) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              foo.md | # Foo\\n
+              bar.md | # Bar\\n
+            out
+        """),
+    )
+    input_dir, output_dir = InputDir(tmp_path / "in"), OutputDir(tmp_path / "out")
+    compiled = output_dir.root / "foo" / "SKILL.md"
+
+    watcher = Watcher(skills, input_dir, output_dir)
+    try:
+        watcher.wait_until(lambda: compiled.is_file(), lambda _nudge: None)
+        # Deleting the untouched template proves the whole tree is reconsidered: a
+        # per-change compile would leave the stale skill behind.
+        watcher.wait_until(
+            lambda: (
+                not compiled.exists()
+                and (output_dir.root / "bar" / "SKILL.md").is_file()
+            ),
+            _delete(input_dir.root / "foo.md"),
+        )
+    finally:
+        watcher.stop()
+
+
+def _delete(path: Path) -> Nudge:
+    def unlink(_nudge: int) -> None:
+        path.unlink(missing_ok=True)
+
+    return unlink
+
+
+def test_watching_skills_logs_a_structural_error_and_keeps_going(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    caplog.set_level(logging.ERROR, logger="documator")
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              foo.md | # Foo\\n
+            out
+        """),
+    )
+    input_dir, output_dir = InputDir(tmp_path / "in"), OutputDir(tmp_path / "out")
+
+    def rejected() -> bool:
+        return any("Shouty Name" in record.message for record in caplog.records)
+
+    def add_invalid(_nudge: int) -> None:
+        (input_dir.root / "Shouty Name.md").write_text("# Shouty\n")
+
+    watcher = Watcher(skills, input_dir, output_dir)
+    try:
+        watcher.wait_until(rejected, add_invalid)
+        watcher.wait_until(
+            lambda: (output_dir.root / "later" / "SKILL.md").is_file(),
+            _rewrite(input_dir.root / "later.md", "# Later\n"),
+        )
+    finally:
+        watcher.stop()

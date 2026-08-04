@@ -13,7 +13,7 @@ uv sync
 
 ```
 documator render INPUT_DIR OUTPUT_DIR [--watch] [--timeout SECONDS]
-documator skills INPUT_DIR OUTPUT_DIR [--timeout SECONDS]
+documator skills INPUT_DIR OUTPUT_DIR [--watch] [--timeout SECONDS]
 ```
 
 `render` mirrors the input tree. 
@@ -64,6 +64,7 @@ and would result in:
 │ *    output_dir      <parse>  [required]                                     │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────╮
+│ --watch                                                                      │
 │ --timeout        SECONDS  [default: root=10.0]                               │
 │ --help                    Show this message and exit.                        │
 ╰──────────────────────────────────────────────────────────────────────────────╯
