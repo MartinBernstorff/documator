@@ -41,6 +41,10 @@ A path segment's prefix decides whether `skills` sees it:
 - `_`-prefixed — inert but readable. Emits no skill, yet stays a valid
   `![[transclusion]]` target: the escape hatch for shared partials and drafts.
 
+A transcluded note lends out its body only. Leading frontmatter describes the note it
+sits in, not the text that note lends, so it stays behind — a shared partial can carry its
+own `description` without leaking it into every host.
+
 A bare `.md` compiles to a skill only when no `.` or `_` segment sits anywhere on its
 path. Any other loose file is ignored rather than an error — the flat layout gives it no
 destination — and logged: `warning` for an ordinary file, `info` for a `.`/`_` path. To
