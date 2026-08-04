@@ -1,4 +1,5 @@
 import re
+import signal
 import subprocess
 import sys
 import time
@@ -345,3 +346,41 @@ def test_watch_flag_keeps_rendering_after_the_first_pass(tmp_path: Path) -> None
     finally:
         process.terminate()
         process.wait(timeout=WATCH_DEADLINE_SECONDS)
+
+
+def test_skills_watch_flag_recompiles_and_interrupting_exits_zero(
+    tmp_path: Path,
+) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              foo.md | # Foo\\n
+            out
+        """),
+    )
+    compiled = tmp_path / "out" / "bar" / "SKILL.md"
+
+    def add() -> None:
+        (tmp_path / "in" / "bar.md").write_text("# Bar\n")
+
+    process = subprocess.Popen(
+        [
+            sys.executable,
+            "-m",
+            "documator",
+            "skills",
+            str(tmp_path / "in"),
+            str(tmp_path / "out"),
+            "--watch",
+        ]
+    )
+
+    try:
+        _wait_for(lambda: (tmp_path / "out" / "foo" / "SKILL.md").is_file())
+        _wait_for(lambda: compiled.is_file(), add)
+    finally:
+        # Ctrl-C is how a session ends, and ending one is not a failure.
+        process.send_signal(signal.SIGINT)
+
+    assert process.wait(timeout=WATCH_DEADLINE_SECONDS) == 0
