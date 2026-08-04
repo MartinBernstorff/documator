@@ -73,6 +73,27 @@ tasks:
       - '@group(sources)'
       - '@group(tests)'
 
+  actionlint:
+    script: 'actionlint'
+    inputs:
+      - '.github/workflows/*.yml'
+
+  # Offline by default: the online audits need a GitHub token, which would make the
+  # task unrunnable without network and uncacheable on its inputs.
+  zizmor:
+    script: 'uv run zizmor --persona auditor --min-severity informational --min-confidence low --strict-collection .'
+    inputs:
+      - '.github/**/*.yml'
+      - 'uv.lock'
+
+  zizmor-fix:
+    extends: 'zizmor'
+    script: 'uv run zizmor --persona auditor --min-severity informational --min-confidence low --strict-collection --fix .'
+    type: 'run'
+    options:
+      cache: false
+      runInCI: false
+
   modularity:
     script: 'uv run tach check'
     inputs:

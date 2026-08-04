@@ -17,6 +17,9 @@ Always run tasks through **moon**, never the tool directly. This runs dependenci
 | Format (fix) | `moon run documator:format-fix` | ruff |
 | Type-check | `moon run documator:typecheck` | pyrefly (`preset = all`) |
 | Modularity | `moon run documator:modularity` | tach |
+| Workflow lint | `moon run documator:actionlint` | actionlint |
+| Workflow security | `moon run documator:zizmor` | zizmor |
+| Workflow security (fix) | `moon run documator:zizmor-fix` | zizmor (`--fix`) |
 | Record snapshots | `moon run documator:snapshot` | pytest + inline-snapshot |
 
 Run everything at once with `moon ci` — the same affected-only pass CI and the pre-commit hook run. Add `--force` to bypass affected detection and the cache and run every task.
