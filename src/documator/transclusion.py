@@ -323,18 +323,24 @@ Alias = NewType("Alias", str)
 Fragment = NewType("Fragment", str)
 
 
+# Everything the author wrote around the target: both parts survive resolution and shape
+# the emitted text, so they travel as one value rather than as a pair of arguments.
+@dataclass(frozen=True, slots=True)
+class Wording:
+    fragment: Fragment
+    alias: Alias
+
+
 @dataclass(frozen=True, slots=True)
 class LinkedNote:
     note: NotePath
-    fragment: Fragment
-    alias: Alias
+    wording: Wording
 
 
 @dataclass(frozen=True, slots=True)
 class LinkedAttachment:
     attachment: AttachmentPath
-    fragment: Fragment
-    alias: Alias
+    wording: Wording
 
 
 type LinkFailure = NoLinkTarget | AmbiguousLink
@@ -346,6 +352,7 @@ type LinkResolution = LinkedNote | LinkedAttachment | LinkFailure
 def resolve_link(vault: Vault, reference: Reference) -> LinkResolution:
     named, alias = _aliased(reference)
     addressed, fragment = _fragmented(named)
+    wording = Wording(fragment, alias)
     wanted = _canonical(addressed)
     if not wanted:
         return NoLinkTarget(reference)
@@ -357,18 +364,14 @@ def resolve_link(vault: Vault, reference: Reference) -> LinkResolution:
     if len(candidates) > 1:
         return AmbiguousLink(reference, tuple(candidates))
     if not candidates:
-        return _attachment(vault, reference, addressed, fragment, alias)
-    return LinkedNote(candidates[0], fragment, alias)
+        return _attachment(vault, reference, addressed, wording)
+    return LinkedNote(candidates[0], wording)
 
 
 # An attachment is matched on its literal name: unlike a note, its suffix is part of
 # what the author wrote rather than a spelling of it.
 def _attachment(
-    vault: Vault,
-    reference: Reference,
-    addressed: Reference,
-    fragment: Fragment,
-    alias: Alias,
+    vault: Vault, reference: Reference, addressed: Reference, wording: Wording
 ) -> LinkedAttachment | LinkFailure:
     wanted = _segments(addressed)
     found = (
@@ -380,7 +383,7 @@ def _attachment(
         return AmbiguousLink(reference, tuple(found))
     if not found:
         return NoLinkTarget(reference)
-    return LinkedAttachment(found[0], fragment, alias)
+    return LinkedAttachment(found[0], wording)
 
 
 # An embed drops the alias because it renders the target; a link keeps it, because the

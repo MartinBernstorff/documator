@@ -108,6 +108,6 @@ uv run documator render docs out
 uv run documator skills docs compiled
 ```
 
-Two layouts over one tree. `render` mirrors it into `out/`, so `guides/@review.md` stays `guides/review.md`. `skills` flattens it into `compiled/`: the bare `guides/@review.md` becomes `review/SKILL.md` with a name-derived `description`, and the `guides/@plan/` folder becomes `plan/SKILL.md` — carrying its declared `description` through — with `references/spec.md` bundled beside it as `plan/references/spec.md`. `Tracer bullet.md` compiles to nothing in either layout; it exists so the link in the review has something to name.
+Two layouts over one tree. `render` mirrors it into `out/`, so `guides/@review.md` stays `guides/review.md`. `skills` flattens it into `compiled/`: the bare `guides/@review.md` becomes `review/SKILL.md` with a name-derived `description`, and the `guides/@plan/` folder becomes `plan/SKILL.md` — carrying its declared `description` through — with `references/spec.md` bundled beside it as `plan/references/spec.md`. `Tracer bullet.md` is a term: `render` mirrors it like any other note, but it compiles to no skill, and it exists so the link in the review has something to name.
 
 This block is extracted verbatim and run by `test_readme.py`.

@@ -38,6 +38,29 @@ def test_only_marked_notes_compile_and_the_mark_is_not_part_of_the_name(
     )
 
 
+def test_a_bare_and_a_folder_skill_claiming_one_name_emit_neither(
+    tmp_path: Path,
+) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              @grill.md | # Bare\\n
+              @grill
+                SKILL.md | # Folder\\n
+            out
+        """),
+    )
+
+    assert _skills(tmp_path / "in", tmp_path / "out") == 1
+
+    assert (tmp_path / "out" / "documator-errors.md").read_text() == snapshot("""\
+# documator errors
+
+- the name "grill" is claimed by @grill/SKILL.md and @grill.md
+""")
+
+
 def test_a_marked_attachment_is_an_error(tmp_path: Path) -> None:
     build_tree(
         tmp_path,
@@ -56,6 +79,32 @@ def test_a_marked_attachment_is_an_error(tmp_path: Path) -> None:
 
 - @diagram.png: only a note can be marked as a skill
 """)
+
+
+def test_a_misplaced_mark_costs_its_file_the_bundle(tmp_path: Path) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              @plan
+                SKILL.md | # Plan\\n
+                @diagram.png | not really a png\\n
+                spec.md | # Spec\\n
+            out
+        """),
+    )
+
+    assert _skills(tmp_path / "in", tmp_path / "out") == 1
+
+    assert _emitted(tmp_path / "out") == snapshot(
+        [
+            ".documator-manifest.json",
+            "documator-errors.md",
+            "plan",
+            "plan/SKILL.md",
+            "plan/spec.md",
+        ]
+    )
 
 
 def test_a_mark_inside_a_skill_folder_is_an_error(tmp_path: Path) -> None:

@@ -276,13 +276,14 @@ def opens_a_bang_span(line: Line) -> bool:
 # Only prose is split: inside a fence an embed is code being quoted, not a transclusion.
 def _split_embeds(prose: Markdown, links: Links) -> list[Block]:
     # The single capture group makes split alternate literal text with each reference.
-    parts = (
+    return (
         Arr(re.split(r"!\[\[([^\[\]\n]*)\]\]", prose))
         .enumerate()
         .filter(lambda part: _is_captured(part) or bool(part[1]))
+        .map(lambda part: Arr(_prose_or_embed(part, links)))
+        .flatten()
         .to_list()
     )
-    return [block for part in parts for block in _prose_or_embed(part, links)]
 
 
 def _is_captured(part: tuple[int, str]) -> bool:

@@ -327,7 +327,6 @@ class Rendered:
     failures: list[Failure]
 
 
-# Where the text being rendered lands, and where the attachments it may link to land.
 # Held per artifact rather than per note, because a link has to work from where the text
 # came to rest, not from where it was written.
 @dataclass(frozen=True, slots=True)
@@ -496,7 +495,7 @@ def _render_attachment(
     if reached is None:
         note = Annotation(str(Unreachable(linked.attachment)))
         return _inline_authoring_error(text, note, origin)
-    label = linked.alias or stem(RelativePath(linked.attachment.root))
+    label = linked.wording.alias or stem(RelativePath(linked.attachment.root))
     return Rendered(Markdown(f"[{label}]({reached.as_posix()}{_fragment(linked)})"), [])
 
 
@@ -507,11 +506,11 @@ def _emitted(linked: LinkedNote) -> str:
     invoked = skill_name(path)
     if invoked is not None:
         return f"/{invoked}{_fragment(linked)}"
-    return linked.alias or f"{stem(path)}{_fragment(linked)}"
+    return f"{linked.wording.alias or stem(path)}{_fragment(linked)}"
 
 
 def _fragment(linked: LinkedNote | LinkedAttachment) -> str:
-    return f"#{linked.fragment}" if linked.fragment else ""
+    return f"#{linked.wording.fragment}" if linked.wording.fragment else ""
 
 
 def _render_transclusion(
