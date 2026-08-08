@@ -179,6 +179,50 @@ def test_unknown_flag_exits_two(tmp_path: Path) -> None:
     assert main(args) == 2
 
 
+def test_render_check_exits_one_and_leaves_the_output_empty(tmp_path: Path) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              note.md | # Note\\n
+            out
+        """),
+    )
+
+    args = ["render", str(tmp_path / "in"), str(tmp_path / "out"), "--check"]
+    assert main(args) == 1
+
+    assert_tree(tmp_path / "out", TreeLayout(""))
+
+
+def test_render_check_exits_zero_once_the_output_is_up_to_date(tmp_path: Path) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              note.md | # Note\\n
+            out
+        """),
+    )
+    assert main(["render", str(tmp_path / "in"), str(tmp_path / "out")]) == 0
+
+    args = ["render", str(tmp_path / "in"), str(tmp_path / "out"), "--check"]
+    assert main(args) == 0
+
+
+def test_render_check_combined_with_watch_exits_two(tmp_path: Path) -> None:
+    build_tree(tmp_path, TreeLayout("in\nout"))
+
+    args = [
+        "render",
+        str(tmp_path / "in"),
+        str(tmp_path / "out"),
+        "--check",
+        "--watch",
+    ]
+    assert main(args) == 2
+
+
 def test_skills_flattens_a_nested_template_tree(tmp_path: Path) -> None:
     build_tree(
         tmp_path,
