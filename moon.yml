@@ -22,11 +22,12 @@ tasks:
       - '@group(tests)'
 
   # xdist makes inline-snapshot self-disable, so recording needs a single process;
-  # testmon would deselect the very tests whose snapshots are missing. Rewrites test
-  # sources, so it is type 'run' to stay out of `moon check` and `moon ci`.
+  # testmon would deselect the very tests whose snapshots are missing, and the shared
+  # fail-fast would stop before the later snapshots are written. Rewrites test sources,
+  # so it is type 'run' to stay out of `moon check` and `moon ci`.
   snapshot:
     type: 'run'
-    script: 'uv run pytest -n0 --testmon-noselect --inline-snapshot=create,fix'
+    script: 'uv run pytest -n0 --maxfail=0 --testmon-noselect --inline-snapshot=create,fix'
     options:
       cache: false
       runInCI: false
@@ -93,6 +94,16 @@ tasks:
     options:
       cache: false
       runInCI: false
+
+  # Baselined: the 105 violations that predate the tool are recorded, so only new
+  # primitives fail. Delete entries from the baseline as they are wrapped.
+  noprim:
+    script: 'uv run noprim check --baseline noprim-baseline.json src'
+    inputs:
+      - 'noprim.toml'
+      - 'noprim-baseline.json'
+      - '@group(sources)'
+      - '@group(tests)'
 
   modularity:
     script: 'uv run tach check'

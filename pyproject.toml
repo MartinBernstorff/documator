@@ -37,6 +37,7 @@ build_command = ""
 dev = [
     "inline-snapshot>=0.35.2",
     "lefthook>=2.1.10",
+    "noprim>=0.1.0",
     "pyrefly>=1.1.1",
     "pytest>=9.1.1",
     "pytest-randomly>=4.1.0",

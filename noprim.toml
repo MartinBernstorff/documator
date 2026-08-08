@@ -1,0 +1,6 @@
+# click decides flag-ness from the annotation being literally `bool`, so wrapping a
+# `--flag` parameter makes it start demanding an argument.
+exempt-typer-args = true
+
+# A domain type around the answer to a yes-or-no question rarely earns its keep.
+ignore = ["NOPRIM007"]
