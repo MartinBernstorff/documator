@@ -1,0 +1,575 @@
+{
+  "version": 2,
+  "files": {
+    "src/documator/cli.py": [
+      {
+        "code": "NOPRIM002",
+        "surface": "return",
+        "qualname": "_parsed",
+        "annotation": "Callable[[str], T]"
+      },
+      {
+        "code": "NOPRIM001",
+        "surface": "parameter",
+        "qualname": "_parsed.parse.raw",
+        "annotation": "str"
+      },
+      {
+        "code": "NOPRIM002",
+        "surface": "return",
+        "qualname": "main",
+        "annotation": "int"
+      },
+      {
+        "code": "NOPRIM001",
+        "surface": "parameter",
+        "qualname": "main.argv",
+        "annotation": "list[str] | None"
+      }
+    ],
+    "src/documator/domain.py": [
+      {
+        "code": "NOPRIM002",
+        "surface": "return",
+        "qualname": "ExistingDir._path_is_dir",
+        "annotation": "Path"
+      },
+      {
+        "code": "NOPRIM001",
+        "surface": "parameter",
+        "qualname": "ExistingDir._path_is_dir.value",
+        "annotation": "Path"
+      },
+      {
+        "code": "NOPRIM002",
+        "surface": "return",
+        "qualname": "ExistingFile._path_is_file",
+        "annotation": "Path"
+      },
+      {
+        "code": "NOPRIM001",
+        "surface": "parameter",
+        "qualname": "ExistingFile._path_is_file.value",
+        "annotation": "Path"
+      }
+    ],
+    "src/documator/engine.py": [
+      {
+        "code": "NOPRIM003",
+        "surface": "attribute",
+        "qualname": "DirectoryConflict.input_dir",
+        "annotation": "Path"
+      },
+      {
+        "code": "NOPRIM003",
+        "surface": "attribute",
+        "qualname": "DirectoryConflict.output_dir",
+        "annotation": "Path"
+      },
+      {
+        "code": "NOPRIM001",
+        "surface": "parameter",
+        "qualname": "Landed.copied.source",
+        "annotation": "Path"
+      },
+      {
+        "code": "NOPRIM001",
+        "surface": "parameter",
+        "qualname": "Landed.matches.site",
+        "annotation": "Path"
+      },
+      {
+        "code": "NOPRIM002",
+        "surface": "return",
+        "qualname": "_emitted",
+        "annotation": "str"
+      },
+      {
+        "code": "NOPRIM002",
+        "surface": "return",
+        "qualname": "_fragment",
+        "annotation": "str"
+      },
+      {
+        "code": "NOPRIM001",
+        "surface": "parameter",
+        "qualname": "_is_empty_dir.path",
+        "annotation": "Path"
+      }
+    ],
+    "src/documator/execution.py": [
+      {
+        "code": "NOPRIM001",
+        "surface": "parameter",
+        "qualname": "_killed.process",
+        "annotation": "subprocess.Popen[str]"
+      },
+      {
+        "code": "NOPRIM002",
+        "surface": "return",
+        "qualname": "_longest_backtick_run",
+        "annotation": "int"
+      },
+      {
+        "code": "NOPRIM002",
+        "surface": "return",
+        "qualname": "_terminal_free_env",
+        "annotation": "dict[str, str]"
+      },
+      {
+        "code": "NOPRIM002",
+        "surface": "return",
+        "qualname": "marker",
+        "annotation": "str"
+      }
+    ],
+    "src/documator/frontmatter.py": [
+      {
+        "code": "NOPRIM001",
+        "surface": "parameter",
+        "qualname": "_opens.key",
+        "annotation": "str"
+      }
+    ],
+    "src/documator/manifest.py": [
+      {
+        "code": "NOPRIM002",
+        "surface": "return",
+        "qualname": "manifest_path",
+        "annotation": "Path"
+      }
+    ],
+    "src/documator/parsing.py": [
+      {
+        "code": "NOPRIM003",
+        "surface": "attribute",
+        "qualname": "StructuralError.message",
+        "annotation": "str"
+      },
+      {
+        "code": "NOPRIM003",
+        "surface": "attribute",
+        "qualname": "_Fence.closed",
+        "annotation": "bool"
+      },
+      {
+        "code": "NOPRIM001",
+        "surface": "parameter",
+        "qualname": "_closed_span.tokens",
+        "annotation": "list[str]"
+      },
+      {
+        "code": "NOPRIM001",
+        "surface": "parameter",
+        "qualname": "_command_or_declaration.command",
+        "annotation": "str"
+      },
+      {
+        "code": "NOPRIM001",
+        "surface": "parameter",
+        "qualname": "_is_captured.part",
+        "annotation": "tuple[int, str]"
+      },
+      {
+        "code": "NOPRIM001",
+        "surface": "parameter",
+        "qualname": "_prose_or_embed.part",
+        "annotation": "tuple[int, str]"
+      },
+      {
+        "code": "NOPRIM001",
+        "surface": "parameter",
+        "qualname": "_prose_or_link.part",
+        "annotation": "tuple[int, str]"
+      },
+      {
+        "code": "NOPRIM002",
+        "surface": "return",
+        "qualname": "_tokens",
+        "annotation": "list[str]"
+      },
+      {
+        "code": "NOPRIM002",
+        "surface": "return",
+        "qualname": "_unescaped",
+        "annotation": "str"
+      }
+    ],
+    "src/documator/render.py": [
+      {
+        "code": "NOPRIM003",
+        "surface": "attribute",
+        "qualname": "_Artifact.source",
+        "annotation": "Path"
+      }
+    ],
+    "src/documator/skills.py": [
+      {
+        "code": "NOPRIM003",
+        "surface": "attribute",
+        "qualname": "_Artifact.content",
+        "annotation": "Markdown | bytes"
+      },
+      {
+        "code": "NOPRIM002",
+        "surface": "return",
+        "qualname": "_bytes",
+        "annotation": "bytes"
+      }
+    ],
+    "src/documator/structural.py": [
+      {
+        "code": "NOPRIM002",
+        "surface": "return",
+        "qualname": "_at",
+        "annotation": "str"
+      }
+    ],
+    "src/documator/summary.py": [
+      {
+        "code": "NOPRIM002",
+        "surface": "return",
+        "qualname": "Errored.level",
+        "annotation": "int"
+      },
+      {
+        "code": "NOPRIM002",
+        "surface": "return",
+        "qualname": "Warned.level",
+        "annotation": "int"
+      }
+    ],
+    "src/documator/test_cli.py": [
+      {
+        "code": "NOPRIM001",
+        "surface": "parameter",
+        "qualname": "_wait_for.done",
+        "annotation": "Callable[[], bool]"
+      }
+    ],
+    "src/documator/test_links.py": [
+      {
+        "code": "NOPRIM002",
+        "surface": "return",
+        "qualname": "_render",
+        "annotation": "int"
+      },
+      {
+        "code": "NOPRIM001",
+        "surface": "parameter",
+        "qualname": "_render.input_dir",
+        "annotation": "Path"
+      },
+      {
+        "code": "NOPRIM001",
+        "surface": "parameter",
+        "qualname": "_render.output_dir",
+        "annotation": "Path"
+      },
+      {
+        "code": "NOPRIM002",
+        "surface": "return",
+        "qualname": "_skills",
+        "annotation": "int"
+      },
+      {
+        "code": "NOPRIM001",
+        "surface": "parameter",
+        "qualname": "_skills.input_dir",
+        "annotation": "Path"
+      },
+      {
+        "code": "NOPRIM001",
+        "surface": "parameter",
+        "qualname": "_skills.output_dir",
+        "annotation": "Path"
+      }
+    ],
+    "src/documator/test_manifest.py": [
+      {
+        "code": "NOPRIM002",
+        "surface": "return",
+        "qualname": "_manifest",
+        "annotation": "str"
+      },
+      {
+        "code": "NOPRIM001",
+        "surface": "parameter",
+        "qualname": "_manifest.output_dir",
+        "annotation": "Path"
+      }
+    ],
+    "src/documator/test_readme.py": [
+      {
+        "code": "NOPRIM001",
+        "surface": "parameter",
+        "qualname": "_try_it_block.readme",
+        "annotation": "Path"
+      }
+    ],
+    "src/documator/test_render.py": [
+      {
+        "code": "NOPRIM002",
+        "surface": "return",
+        "qualname": "_check",
+        "annotation": "int"
+      },
+      {
+        "code": "NOPRIM001",
+        "surface": "parameter",
+        "qualname": "_check.input_dir",
+        "annotation": "Path"
+      },
+      {
+        "code": "NOPRIM001",
+        "surface": "parameter",
+        "qualname": "_check.output_dir",
+        "annotation": "Path"
+      },
+      {
+        "code": "NOPRIM002",
+        "surface": "return",
+        "qualname": "_render",
+        "annotation": "int"
+      },
+      {
+        "code": "NOPRIM001",
+        "surface": "parameter",
+        "qualname": "_render.input_dir",
+        "annotation": "Path"
+      },
+      {
+        "code": "NOPRIM001",
+        "surface": "parameter",
+        "qualname": "_render.output_dir",
+        "annotation": "Path"
+      }
+    ],
+    "src/documator/test_skills.py": [
+      {
+        "code": "NOPRIM002",
+        "surface": "return",
+        "qualname": "_emitted",
+        "annotation": "list[str]"
+      },
+      {
+        "code": "NOPRIM001",
+        "surface": "parameter",
+        "qualname": "_emitted.output_dir",
+        "annotation": "Path"
+      },
+      {
+        "code": "NOPRIM002",
+        "surface": "return",
+        "qualname": "_skills",
+        "annotation": "int"
+      },
+      {
+        "code": "NOPRIM001",
+        "surface": "parameter",
+        "qualname": "_skills.input_dir",
+        "annotation": "Path"
+      },
+      {
+        "code": "NOPRIM001",
+        "surface": "parameter",
+        "qualname": "_skills.output_dir",
+        "annotation": "Path"
+      }
+    ],
+    "src/documator/test_transclusion.py": [
+      {
+        "code": "NOPRIM002",
+        "surface": "return",
+        "qualname": "_render",
+        "annotation": "int"
+      },
+      {
+        "code": "NOPRIM001",
+        "surface": "parameter",
+        "qualname": "_render.input_dir",
+        "annotation": "Path"
+      },
+      {
+        "code": "NOPRIM001",
+        "surface": "parameter",
+        "qualname": "_render.output_dir",
+        "annotation": "Path"
+      }
+    ],
+    "src/documator/test_watch.py": [
+      {
+        "code": "NOPRIM001",
+        "surface": "parameter",
+        "qualname": "Watcher.wait_until.done",
+        "annotation": "Callable[[], bool]"
+      },
+      {
+        "code": "NOPRIM001",
+        "surface": "parameter",
+        "qualname": "_delete.path",
+        "annotation": "Path"
+      },
+      {
+        "code": "NOPRIM001",
+        "surface": "parameter",
+        "qualname": "_delete.unlink._nudge",
+        "annotation": "int"
+      },
+      {
+        "code": "NOPRIM002",
+        "surface": "return",
+        "qualname": "_holds",
+        "annotation": "Callable[[], bool]"
+      },
+      {
+        "code": "NOPRIM001",
+        "surface": "parameter",
+        "qualname": "_holds.body",
+        "annotation": "str"
+      },
+      {
+        "code": "NOPRIM001",
+        "surface": "parameter",
+        "qualname": "_holds.path",
+        "annotation": "Path"
+      },
+      {
+        "code": "NOPRIM001",
+        "surface": "parameter",
+        "qualname": "_rewrite.body",
+        "annotation": "str"
+      },
+      {
+        "code": "NOPRIM001",
+        "surface": "parameter",
+        "qualname": "_rewrite.path",
+        "annotation": "Path"
+      },
+      {
+        "code": "NOPRIM001",
+        "surface": "parameter",
+        "qualname": "_rewrite.write._nudge",
+        "annotation": "int"
+      },
+      {
+        "code": "NOPRIM004",
+        "surface": "parameter",
+        "qualname": "test_an_interrupt_during_a_compile_ends_the_session_cleanly.interrupted._timeout",
+        "annotation": "object"
+      },
+      {
+        "code": "NOPRIM001",
+        "surface": "parameter",
+        "qualname": "test_watch_debounces_a_burst_of_saves.burst.nudge",
+        "annotation": "int"
+      },
+      {
+        "code": "NOPRIM002",
+        "surface": "return",
+        "qualname": "test_watch_debounces_a_burst_of_saves.recompiles",
+        "annotation": "int"
+      },
+      {
+        "code": "NOPRIM001",
+        "surface": "parameter",
+        "qualname": "test_watch_keeps_going_after_a_render_fails.lock.nudge",
+        "annotation": "int"
+      },
+      {
+        "code": "NOPRIM001",
+        "surface": "parameter",
+        "qualname": "test_watch_keeps_going_after_a_render_fails.unlock_and_add._nudge",
+        "annotation": "int"
+      },
+      {
+        "code": "NOPRIM002",
+        "surface": "return",
+        "qualname": "test_watch_summarises_every_recompile.summaries",
+        "annotation": "int"
+      },
+      {
+        "code": "NOPRIM001",
+        "surface": "parameter",
+        "qualname": "test_watching_skills_logs_a_structural_error_and_keeps_going.add_invalid._nudge",
+        "annotation": "int"
+      }
+    ],
+    "src/documator/transclusion.py": [
+      {
+        "code": "NOPRIM002",
+        "surface": "return",
+        "qualname": "Vault.read",
+        "annotation": "str"
+      },
+      {
+        "code": "NOPRIM002",
+        "surface": "return",
+        "qualname": "Vault.read_bytes",
+        "annotation": "bytes"
+      },
+      {
+        "code": "NOPRIM003",
+        "surface": "attribute",
+        "qualname": "Vault.root",
+        "annotation": "Path"
+      },
+      {
+        "code": "NOPRIM002",
+        "surface": "return",
+        "qualname": "_bare",
+        "annotation": "str"
+      }
+    ],
+    "src/documator/tree_layout.py": [
+      {
+        "code": "NOPRIM003",
+        "surface": "attribute",
+        "qualname": "TreeEntry.content",
+        "annotation": "str | None"
+      },
+      {
+        "code": "NOPRIM003",
+        "surface": "attribute",
+        "qualname": "TreeEntry.path",
+        "annotation": "Path"
+      },
+      {
+        "code": "NOPRIM002",
+        "surface": "return",
+        "qualname": "_describe",
+        "annotation": "dict[Path, str | None]"
+      },
+      {
+        "code": "NOPRIM001",
+        "surface": "parameter",
+        "qualname": "_describe.base",
+        "annotation": "Path"
+      },
+      {
+        "code": "NOPRIM002",
+        "surface": "return",
+        "qualname": "_unescape",
+        "annotation": "str"
+      },
+      {
+        "code": "NOPRIM001",
+        "surface": "parameter",
+        "qualname": "_unescape.content",
+        "annotation": "str"
+      },
+      {
+        "code": "NOPRIM001",
+        "surface": "parameter",
+        "qualname": "assert_tree.base",
+        "annotation": "Path"
+      },
+      {
+        "code": "NOPRIM001",
+        "surface": "parameter",
+        "qualname": "build_tree.base",
+        "annotation": "Path"
+      }
+    ]
+  }
+}

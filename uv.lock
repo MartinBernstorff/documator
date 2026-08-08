@@ -116,6 +116,7 @@ dependencies = [
 dev = [
     { name = "inline-snapshot" },
     { name = "lefthook" },
+    { name = "noprim" },
     { name = "pyrefly" },
     { name = "pytest" },
     { name = "pytest-randomly" },
@@ -139,6 +140,7 @@ requires-dist = [
 dev = [
     { name = "inline-snapshot", specifier = ">=0.35.2" },
     { name = "lefthook", specifier = ">=2.1.10" },
+    { name = "noprim", specifier = ">=0.1.0" },
     { name = "pyrefly", specifier = ">=1.1.1" },
     { name = "pytest", specifier = ">=9.1.1" },
     { name = "pytest-randomly", specifier = ">=4.1.0" },
@@ -227,11 +229,11 @@ wheels = [
 
 [[package]]
 name = "iterpy"
-version = "1.14.0"
+version = "1.15.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/03/f8/8fc1ef1de3bb64b26983f0deb5a99c90a40e45e76684760daf6f13e1e811/iterpy-1.14.0.tar.gz", hash = "sha256:22bdda576a045cbe7897168d4c0bd519ea29e1ea44310a5427068825b1043a66", size = 108647, upload-time = "2026-01-09T12:04:36.67Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/44/a3/2d3aa307cb651ffb4cf397778989f836a792ea5a9b02550633e6dcd0b40a/iterpy-1.15.0.tar.gz", hash = "sha256:a7eb5a22f2c905f8290f43a3a356b529eb87791cfbb0bacf46e50d542a473e59", size = 89018, upload-time = "2026-08-08T10:33:35.988Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/2d/2a/95c1f2c50410c5f25c8eb77afac50de30068f12f28e5ef2b5942f023b137/iterpy-1.14.0-py3-none-any.whl", hash = "sha256:4689c90c24230cd3ac89e060234173d267aa0ff3ba397043b8f6463f0e897609", size = 12318, upload-time = "2026-01-09T12:04:35.262Z" },
+    { url = "https://files.pythonhosted.org/packages/fc/22/bdefeabb9275dad279e57f513c4271f995ad4ae9c8f136cd7c856e8179f6/iterpy-1.15.0-py3-none-any.whl", hash = "sha256:e2b26d9b6d09b476d7a41ff98b4b2932c6a93322ddf1a9013420845fdbef3176", size = 12550, upload-time = "2026-08-08T10:33:34.614Z" },
 ]
 
 [[package]]
@@ -278,12 +280,38 @@ wheels = [
 ]
 
 [[package]]
+name = "noprim"
+version = "0.1.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "iterpy" },
+    { name = "pathspec" },
+    { name = "pydantic" },
+    { name = "pydantic-settings" },
+    { name = "typer" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/79/47/765ff2ded4650ab52763d8ea5dd371731dc1368086801c787696235eddcf/noprim-0.1.0.tar.gz", hash = "sha256:3db1ede6d9eff1add93e83d4344cfd3e1b63bb5a43b1e26466c603c19a933110", size = 134015, upload-time = "2026-08-08T16:06:33.25Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/da/11/bb6c5ebe62007681b4532acd8cfe4af3d7646b6660ee32f3075a414c04a5/noprim-0.1.0-py3-none-any.whl", hash = "sha256:51eafe7feabea90940d3f36278d9887f96cb59e93c42ba8991a65529de08ff0e", size = 36556, upload-time = "2026-08-08T16:06:32.044Z" },
+]
+
+[[package]]
 name = "packaging"
 version = "26.2"
 source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/d7/f1/e7a6dd94a8d4a5626c03e4e99c87f241ba9e350cd9e6d75123f992427270/packaging-26.2.tar.gz", hash = "sha256:ff452ff5a3e828ce110190feff1178bb1f2ea2281fa2075aadb987c2fb221661", size = 228134, upload-time = "2026-04-24T20:15:23.917Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/df/b2/87e62e8c3e2f4b32e5fe99e0b86d576da1312593b39f47d8ceef365e95ed/packaging-26.2-py3-none-any.whl", hash = "sha256:5fc45236b9446107ff2415ce77c807cee2862cb6fac22b8a73826d0693b0980e", size = 100195, upload-time = "2026-04-24T20:15:22.081Z" },
+]
+
+[[package]]
+name = "pathspec"
+version = "1.1.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/5a/82/42f767fc1c1143d6fd36efb827202a2d997a375e160a71eb2888a925aac1/pathspec-1.1.1.tar.gz", hash = "sha256:17db5ecd524104a120e173814c90367a96a98d07c45b2e10c2f3919fff91bf5a", size = 135180, upload-time = "2026-04-27T01:46:08.907Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f1/d9/7fb5aa316bc299258e68c73ba3bddbc499654a07f151cba08f6153988714/pathspec-1.1.1-py3-none-any.whl", hash = "sha256:a00ce642f577bf7f473932318056212bc4f8bfdf53128c78bbd5af0b9b20b189", size = 57328, upload-time = "2026-04-27T01:46:07.06Z" },
 ]
 
 [[package]]
@@ -361,6 +389,20 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/30/a6/9f9f380dbb301f67023bf8f707aaa75daadf84f7152d95c410fd7e81d994/pydantic_core-2.46.4-cp314-cp314t-win32.whl", hash = "sha256:e846ae7835bf0703ae43f534ab79a867146dadd59dc9ca5c8b53d5c8f7c9ef02", size = 1955575, upload-time = "2026-05-06T13:38:51.116Z" },
     { url = "https://files.pythonhosted.org/packages/40/1f/f1eb9eb350e795d1af8586289746f5c5677d16043040d63710e22abc43c9/pydantic_core-2.46.4-cp314-cp314t-win_amd64.whl", hash = "sha256:2108ba5c1c1eca18030634489dc544844144ee36357f2f9f780b93e7ddbb44b5", size = 2051624, upload-time = "2026-05-06T13:38:21.672Z" },
     { url = "https://files.pythonhosted.org/packages/f6/d2/42dd53d0a85c27606f316d3aa5d2869c4e8470a5ed6dec30e4a1abe19192/pydantic_core-2.46.4-cp314-cp314t-win_arm64.whl", hash = "sha256:4fcbe087dbc2068af7eda3aa87634eba216dbda64d1ae73c8684b621d33f6596", size = 2017325, upload-time = "2026-05-06T13:40:52.723Z" },
+]
+
+[[package]]
+name = "pydantic-settings"
+version = "2.15.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pydantic" },
+    { name = "python-dotenv" },
+    { name = "typing-inspection" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/68/ca/31c57507b13119d7d3cfa1576dad2911a4861e3be07b579395f4e9d393f9/pydantic_settings-2.15.0.tar.gz", hash = "sha256:694b793e84f766ba76a90ebdefc01d0a9a045dab0382bee70393da93712ad117", size = 261253, upload-time = "2026-08-07T09:24:57.419Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/30/a4/2bffa9f8e804325a09867f0e9d30795c80ea9f8d62560bd1b6ad6220eb2f/pydantic_settings-2.15.0-py3-none-any.whl", hash = "sha256:0ba092c291c94baceb5eff768aa0d56400a457585bc0175925a5a5510303da42", size = 69413, upload-time = "2026-08-07T09:24:55.839Z" },
 ]
 
 [[package]]
@@ -464,6 +506,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/78/b4/439b179d1ff526791eb921115fca8e44e596a13efeda518b9d845a619450/pytest_xdist-3.8.0.tar.gz", hash = "sha256:7e578125ec9bc6050861aa93f2d59f1d8d085595d6551c2c90b6f4fad8d3a9f1", size = 88069, upload-time = "2025-07-01T13:30:59.346Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/ca/31/d4e37e9e550c2b92a9cbc2e4d0b7420a27224968580b5a447f420847c975/pytest_xdist-3.8.0-py3-none-any.whl", hash = "sha256:202ca578cfeb7370784a8c33d6d05bc6e13b4f25b5053c30a152269fd10f0b88", size = 46396, upload-time = "2025-07-01T13:30:56.632Z" },
+]
+
+[[package]]
+name = "python-dotenv"
+version = "1.2.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/82/ed/0301aeeac3e5353ef3d94b6ec08bbcabd04a72018415dcb29e588514bba8/python_dotenv-1.2.2.tar.gz", hash = "sha256:2c371a91fbd7ba082c2c1dc1f8bf89ca22564a087c2c287cd9b662adde799cf3", size = 50135, upload-time = "2026-03-01T16:00:26.196Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/0b/d7/1959b9648791274998a9c3526f6d0ec8fd2233e4d4acce81bbae76b44b2a/python_dotenv-1.2.2-py3-none-any.whl", hash = "sha256:1d8214789a24de455a8b8bd8ae6fe3c6b69a5e3d64aa8a8e5d68e694bbcb285a", size = 22101, upload-time = "2026-03-01T16:00:25.09Z" },
 ]
 
 [[package]]

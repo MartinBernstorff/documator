@@ -1,4 +1,4 @@
 [pytest]
 testpaths = ["src"]
 python_files = ["test_*.py"]
-addopts = ["-ra", "-n", "auto", "--testmon"]
+addopts = ["-ra", "-x", "-n", "auto", "--testmon"]
