@@ -47,7 +47,7 @@ def test_skills_records_the_template_against_its_flattened_destination(
         TreeLayout("""
             in
               guides
-                plan
+                @plan
                   SKILL.md | # Body\\n
                   references
                     spec.pdf | %PDF-fake\\n
@@ -64,8 +64,8 @@ def test_skills_records_the_template_against_its_flattened_destination(
 
     assert _manifest(tmp_path / "out") == snapshot("""\
 {
-  "guides/plan/SKILL.md": "plan/SKILL.md",
-  "guides/plan/references/spec.pdf": "plan/references/spec.pdf"
+  "guides/@plan/SKILL.md": "plan/SKILL.md",
+  "guides/@plan/references/spec.pdf": "plan/references/spec.pdf"
 }
 """)
 
@@ -114,7 +114,7 @@ def test_the_errors_report_is_tracked_like_any_other_output(tmp_path: Path) -> N
         tmp_path,
         TreeLayout("""
             in
-              Foo.md | # Foo\\n
+              @Foo.md | # Foo\\n
             out
         """),
     )

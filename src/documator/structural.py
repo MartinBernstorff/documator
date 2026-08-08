@@ -12,6 +12,7 @@ from documator.frontmatter import (
     declares_empty_description,
     declares_name,
 )
+from documator.inert import PathClass, classify
 from documator.parsing import Markdown
 
 Reason = NewType("Reason", str)
@@ -84,8 +85,58 @@ class Unreadable:
         return f"{self.derived}: the template cannot be read: {self.reason}"
 
 
+# The mark says "this is a skill", so a path that cannot become one is the author asking
+# for something the compiler will not do, rather than a mark to quietly ignore.
+@dataclass(frozen=True, slots=True)
+class MarkedAttachment:
+    path: RelativePath
+
+    def reason(self) -> Reason:
+        return Reason("only a note can be marked as a skill")
+
+    def __str__(self) -> str:
+        return f"{self.path}: {self.reason()}"
+
+
+@dataclass(frozen=True, slots=True)
+class MarkedInsideSkill:
+    path: RelativePath
+
+    def reason(self) -> Reason:
+        return Reason("already inside a skill, and skills do not nest")
+
+    def __str__(self) -> str:
+        return f"{self.path}: {self.reason()}"
+
+
+type Misplaced = MarkedAttachment | MarkedInsideSkill
+
+
+# Decided from the path alone, so both layouts judge a mark the same way: it is legal on
+# one node, and that node is either a note or the folder whose SKILL.md it stands for.
+def misplacement(path: RelativePath) -> Misplaced | None:
+    if classify(path) is not PathClass.OPEN:
+        return None
+    marked = Arr(path.parts).filter(lambda part: part.startswith("@")).len()
+    if marked > 1:
+        return MarkedInsideSkill(path)
+    if marked and path.name.startswith("@") and path.suffix.lower() != ".md":
+        return MarkedAttachment(path)
+    return None
+
+
+def _found(failure: Misplaced | None) -> Arr[Misplaced]:
+    return Arr([] if failure is None else [failure])
+
+
+def misplaced(paths: list[RelativePath]) -> list[Misplaced]:
+    return Arr(paths).map(misplacement).map(_found).flatten().to_list()
+
+
 type UnusableSource = EmptyTemplate | DeclaredName | EmptyDescription
-type StructuralFailure = InvalidName | Collision | UnusableSource | Unreadable
+type StructuralFailure = (
+    InvalidName | Collision | UnusableSource | Unreadable | Misplaced
+)
 
 
 def invalid_name(derived: Derived) -> InvalidName | None:
@@ -108,6 +159,8 @@ def unusable(derived: Derived, template: Template) -> UnusableSource | None:
 def _at(failure: StructuralFailure) -> str:
     if isinstance(failure, Collision):
         return str(failure.sources[0])
+    if isinstance(failure, MarkedAttachment | MarkedInsideSkill):
+        return str(failure.path)
     return str(failure.derived.source)
 
 
