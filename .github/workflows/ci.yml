@@ -36,3 +36,46 @@ jobs:
       - name: Collect/retrospect on results
         uses: appthrust/moon-ci-retrospect@631a1e667f96e8ca893eab69f03e425f7fbfdc2b # v2.1.0
         if: success() || failure()
+
+  release:
+    name: release
+    needs: [ci]
+    if: github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency: release
+    environment: pypi
+    permissions:
+      contents: write # push the tag and create the GitHub Release
+      id-token: write # mandatory for PyPI trusted publishing
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # hatch-vcs and semantic-release both resolve versions from the full tag history
+          persist-credentials: false
+
+      # Tags only: no version is written back, so main stays untouched by the release.
+      - name: Python Semantic Release
+        id: release
+        uses: python-semantic-release/python-semantic-release@39dd2052f2ce8282a5d932c31d58a2ca06d2550e # v10.6.1
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          commit: false
+          changelog: false
+          build: false
+
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        if: steps.release.outputs.released == 'true'
+        with:
+          # A poisoned cache would end up inside the published artifact.
+          enable-cache: false
+
+      # Runs after the tag exists locally, so hatch-vcs stamps the released version.
+      - name: Build distributions
+        if: steps.release.outputs.released == 'true'
+        run: uv build
+
+      - name: Publish package distributions to PyPI
+        if: steps.release.outputs.released == 'true'
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
