@@ -1,16 +1,22 @@
 import shutil
+from dataclasses import dataclass
+from pathlib import Path
 
 from documator.domain import ExitCode, InputDir, OutputDir, TimeoutSeconds
 from documator.engine import (
     Failure,
+    Landed,
+    Mode,
     Origin,
     blocked,
     directory_conflict,
     log,
+    outdated,
     prune,
     relative_files,
     render_markdown,
     report_conflict,
+    report_orphans,
     worst,
 )
 from documator.manifest import (
@@ -26,8 +32,25 @@ from documator.summary import Errored, Produced, summarise
 from documator.transclusion import NotePath, Target, index
 
 
+# A non-markdown file has no rendered text of its own: it lands as a verbatim copy of
+# its source.
+@dataclass(frozen=True, slots=True)
+class _Artifact:
+    source: Path
+    destination: DestinationPath
+    text: Markdown | None
+
+    def landed(self) -> Landed:
+        if self.text is None:
+            return Landed.copied(self.source)
+        return Landed.rendered(self.text)
+
+
 def render(
-    input_dir: InputDir, output_dir: OutputDir, timeout: TimeoutSeconds
+    input_dir: InputDir,
+    output_dir: OutputDir,
+    timeout: TimeoutSeconds,
+    mode: Mode = Mode.WRITE,
 ) -> ExitCode:
     conflict = directory_conflict(input_dir, output_dir)
     if conflict is not None:
@@ -35,14 +58,19 @@ def render(
 
     relative_paths = relative_files(input_dir)
     tracked = read_manifest(output_dir)
+    produced = {DestinationPath(path) for path in relative_paths}
 
-    # Prune first, so a path this run reclaims is free before anything writes into it.
-    prune(output_dir, tracked, {DestinationPath(path) for path in relative_paths})
+    failures: list[Failure] = []
+    if mode is Mode.CHECK:
+        failures.extend(report_orphans(output_dir, tracked, produced))
+    else:
+        # Pruned first, so a path this run reclaims is free before anything writes into
+        # it.
+        prune(output_dir, tracked, produced)
 
     # Indexed once per run, so every transclusion in the run sees the same vault.
     vault = index(input_dir)
 
-    failures: list[Failure] = []
     written: dict[TemplatePath, DestinationPath] = {}
     for relative in relative_paths:
         template = TemplatePath(relative)
@@ -55,24 +83,38 @@ def render(
             failures.append(refused)
             continue
         source = input_dir.root / relative
-        target = output_dir.root / destination
-        target.parent.mkdir(parents=True, exist_ok=True)
+        text = None
         if source.suffix.lower() == ".md":
             rendered = render_markdown(
                 Markdown(source.read_text(encoding="utf-8")),
                 Origin(vault, (Target.whole(NotePath(relative)),)),
                 timeout,
             )
-            target.write_text(annotated(rendered.text, template), encoding="utf-8")
             failures.extend(rendered.failures)
-        else:
-            shutil.copy2(source, target)
+            text = annotated(rendered.text, template)
+        failures.extend(_land(mode, output_dir, _Artifact(source, destination, text)))
         written[template] = destination
-        log.info("rendered %s", relative)
+        log.info("%s %s", "checked" if mode is Mode.CHECK else "rendered", relative)
 
-    # Written last and only for what really landed, so the manifest can never claim a
-    # file this run refused to write.
-    write_manifest(output_dir, Manifest(written))
+    if mode is Mode.WRITE:
+        # Written last and only for what really landed, so the manifest can never
+        # claim a file this run refused to write.
+        write_manifest(output_dir, Manifest(written))
 
     summarise(Produced(len(written)), [Errored(failure) for failure in failures])
     return worst(failures)
+
+
+# The only place the two modes part ways: one makes the output match, the other reports
+# that it does not.
+def _land(mode: Mode, output_dir: OutputDir, artifact: _Artifact) -> list[Failure]:
+    if mode is Mode.CHECK:
+        stale = outdated(output_dir, artifact.destination, artifact.landed())
+        return [] if stale is None else [stale]
+    target = output_dir.root / artifact.destination
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if artifact.text is None:
+        shutil.copy2(artifact.source, target)
+    else:
+        target.write_text(artifact.text, encoding="utf-8")
+    return []

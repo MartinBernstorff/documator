@@ -1,5 +1,6 @@
 import functools
 import logging
+import stat
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -8,6 +9,8 @@ from iterpy import Arr
 
 from documator.domain import (
     ExitCode,
+    FileContent,
+    FileMode,
     InputDir,
     OutputDir,
     RelativePath,
@@ -106,9 +109,11 @@ def relative_files(input_dir: InputDir) -> list[RelativePath]:
     )
 
 
-def prune(
+# A tracked output the run no longer produces. Both modes work from this set: one
+# deletes it, the other reports that it is still there.
+def orphans(
     output_dir: OutputDir, tracked: Manifest, produced: set[DestinationPath]
-) -> None:
+) -> list[DestinationPath]:
     destination = output_dir.root
     owned = tracked.destinations()
     # Guarded, because the output may be a whole repository: the walk is the cost.
@@ -124,12 +129,19 @@ def prune(
             .filter(lambda relative: relative not in owned)
         ):
             log.debug("kept %s: not written by documator", kept)
-    emptied = set[Path]()
-    for relative in (
+    return (
         Arr(sorted(owned - produced, key=str))
         .filter(lambda relative: (destination / relative).is_file())
         .to_list()
-    ):
+    )
+
+
+def prune(
+    output_dir: OutputDir, tracked: Manifest, produced: set[DestinationPath]
+) -> None:
+    destination = output_dir.root
+    emptied = set[Path]()
+    for relative in orphans(output_dir, tracked, produced):
         log.info("pruned %s", relative)
         (destination / relative).unlink()
         emptied.add((destination / relative).parent)
@@ -200,6 +212,78 @@ def blocked(
     if refused is None:
         return None
     failure = Failure(target, Annotation(str(refused)), ExitCode(2))
+    log.error("%s", failure)
+    return failure
+
+
+# Check mode answers "would a real run change anything?", so it never touches the tree:
+# every difference it finds is reported instead of applied.
+class Mode(StrEnum):
+    WRITE = "write"
+    CHECK = "check"
+
+
+@dataclass(frozen=True, slots=True)
+class Stale:
+    target: DestinationPath
+
+    def __str__(self) -> str:
+        return "out of date: re-run documator to write it"
+
+
+@dataclass(frozen=True, slots=True)
+class Orphaned:
+    target: DestinationPath
+
+    def __str__(self) -> str:
+        return "no longer produced: re-run documator to prune it"
+
+
+# What a real run would leave at a destination. A copy carries its source's mode across,
+# so a mode change alone is a change; a rendered file is written without one.
+@dataclass(frozen=True, slots=True)
+class Landed:
+    content: FileContent
+    mode: FileMode | None
+
+    @classmethod
+    def copied(cls, source: Path) -> Landed:
+        return cls(
+            FileContent(source.read_bytes()),
+            FileMode(stat.S_IMODE(source.stat().st_mode)),
+        )
+
+    @classmethod
+    def rendered(cls, text: Markdown) -> Landed:
+        return cls(FileContent(text.encode("utf-8")), None)
+
+    def matches(self, site: Path) -> bool:
+        if site.read_bytes() != self.content:
+            return False
+        return self.mode is None or stat.S_IMODE(site.stat().st_mode) == self.mode
+
+
+# A difference is a content failure (1), not an impossible run (2): the tree is fine, it
+# is just behind the templates.
+def outdated(
+    output_dir: OutputDir, target: DestinationPath, landed: Landed
+) -> Failure | None:
+    site = output_dir.root / target
+    if site.is_file() and landed.matches(site):
+        return None
+    failure = Failure(target, Annotation(str(Stale(target))), ExitCode(1))
+    log.error("%s", failure)
+    return failure
+
+
+def report_orphans(
+    output_dir: OutputDir, tracked: Manifest, produced: set[DestinationPath]
+) -> list[Failure]:
+    return [_orphan(target) for target in orphans(output_dir, tracked, produced)]
+
+
+def _orphan(target: DestinationPath) -> Failure:
+    failure = Failure(target, Annotation(str(Orphaned(target))), ExitCode(1))
     log.error("%s", failure)
     return failure
 

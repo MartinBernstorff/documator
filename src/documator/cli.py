@@ -7,7 +7,7 @@ import typer
 from pydantic import BaseModel, ValidationError
 
 from documator.domain import ExitCode, InputDir, OutputDir, TimeoutSeconds
-from documator.engine import DEFAULT_TIMEOUT
+from documator.engine import DEFAULT_TIMEOUT, Mode
 from documator.render import render as _render
 from documator.skills import skills as _skills
 from documator.watch import watch as _watch
@@ -41,14 +41,19 @@ def render(
     input_dir: Annotated[InputDir, typer.Argument(parser=_parsed(InputDir))],
     output_dir: Annotated[OutputDir, typer.Argument(parser=_parsed(OutputDir))],
     watch: Annotated[bool, typer.Option("--watch")] = False,
+    check: Annotated[bool, typer.Option("--check")] = False,
     timeout: Annotated[
         TimeoutSeconds,
         typer.Option("--timeout", metavar="SECONDS", parser=_parsed(TimeoutSeconds)),
     ] = DEFAULT_TIMEOUT,
 ) -> None:
+    if check and watch:
+        raise typer.BadParameter("--check cannot be combined with --watch")
     if watch:
         raise typer.Exit(_watch(_render, input_dir, output_dir, timeout))
-    raise typer.Exit(_render(input_dir, output_dir, timeout))
+    raise typer.Exit(
+        _render(input_dir, output_dir, timeout, Mode.CHECK if check else Mode.WRITE)
+    )
 
 
 @app.command()

@@ -12,7 +12,7 @@ uv sync
 ## Usage
 
 ```
-documator [--quiet] render INPUT_DIR OUTPUT_DIR [--watch] [--timeout SECONDS]
+documator [--quiet] render INPUT_DIR OUTPUT_DIR [--watch] [--check] [--timeout SECONDS]
 documator [--quiet] skills INPUT_DIR OUTPUT_DIR [--watch] [--timeout SECONDS]
 ```
 
@@ -28,10 +28,13 @@ documator [--quiet] skills INPUT_DIR OUTPUT_DIR [--watch] [--timeout SECONDS]
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────╮
 │ --watch                                                                      │
+│ --check                                                                      │
 │ --timeout        SECONDS  [default: root=10.0]                               │
 │ --help                    Show this message and exit.                        │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ```
+
+`--check` renders the whole tree and writes none of it: nothing is created, overwritten or pruned. Every output that is missing, out of date, or still tracked after its template went away is reported, and the run exits non-zero — so CI can fail on a repository whose generated files have drifted from their templates without the job being able to paper over it. Blocks still run, since their output is what the comparison is about; `--check` bounds what documator writes, not what a template's commands do. It cannot be combined with `--watch`.
 
 `skills` compiles the same templates into the flat `<skill-name>/SKILL.md` layout Claude's skill loader expects: nesting in the input tree is organisational only, the filename stem becomes the skill name, and the frontmatter is generated — any keys the template declares pass through, and a declared `description` wins over the name-derived placeholder.
 
