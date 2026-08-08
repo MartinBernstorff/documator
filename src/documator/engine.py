@@ -1,5 +1,6 @@
 import functools
 import logging
+import stat
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -8,6 +9,8 @@ from iterpy import Arr
 
 from documator.domain import (
     ExitCode,
+    FileContent,
+    FileMode,
     InputDir,
     OutputDir,
     RelativePath,
@@ -236,13 +239,37 @@ class Orphaned:
         return "no longer produced: re-run documator to prune it"
 
 
+# What a real run would leave at a destination. A copy carries its source's mode across,
+# so a mode change alone is a change; a rendered file is written without one.
+@dataclass(frozen=True, slots=True)
+class Landed:
+    content: FileContent
+    mode: FileMode | None
+
+    @classmethod
+    def copied(cls, source: Path) -> Landed:
+        return cls(
+            FileContent(source.read_bytes()),
+            FileMode(stat.S_IMODE(source.stat().st_mode)),
+        )
+
+    @classmethod
+    def rendered(cls, text: Markdown) -> Landed:
+        return cls(FileContent(text.encode("utf-8")), None)
+
+    def matches(self, site: Path) -> bool:
+        if site.read_bytes() != self.content:
+            return False
+        return self.mode is None or stat.S_IMODE(site.stat().st_mode) == self.mode
+
+
 # A difference is a content failure (1), not an impossible run (2): the tree is fine, it
 # is just behind the templates.
 def outdated(
-    output_dir: OutputDir, target: DestinationPath, content: bytes
+    output_dir: OutputDir, target: DestinationPath, landed: Landed
 ) -> Failure | None:
-    landed = output_dir.root / target
-    if landed.is_file() and landed.read_bytes() == content:
+    site = output_dir.root / target
+    if site.is_file() and landed.matches(site):
         return None
     failure = Failure(target, Annotation(str(Stale(target))), ExitCode(1))
     log.error("%s", failure)

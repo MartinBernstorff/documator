@@ -65,3 +65,7 @@ class TimeoutSeconds(RootModel[float]):
 RelativePath = NewType("RelativePath", Path)
 
 ExitCode = NewType("ExitCode", int)
+
+FileContent = NewType("FileContent", bytes)
+
+FileMode = NewType("FileMode", int)

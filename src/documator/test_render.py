@@ -1105,6 +1105,21 @@ def test_check_reports_an_output_whose_template_changed(tmp_path: Path) -> None:
 """)
 
 
+def test_check_reports_a_copy_whose_file_mode_changed(tmp_path: Path) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              script.sh | echo hi\\n
+            out
+        """),
+    )
+    assert _render(tmp_path / "in", tmp_path / "out") == 0
+    (tmp_path / "in" / "script.sh").chmod(0o755)
+
+    assert _check(tmp_path / "in", tmp_path / "out") == 1
+
+
 def test_go_template_in_a_command_survives_untouched(tmp_path: Path) -> None:
     build_tree(
         tmp_path,

@@ -5,6 +5,7 @@ from pathlib import Path
 from documator.domain import ExitCode, InputDir, OutputDir, TimeoutSeconds
 from documator.engine import (
     Failure,
+    Landed,
     Mode,
     Origin,
     blocked,
@@ -32,17 +33,17 @@ from documator.transclusion import NotePath, Target, index
 
 
 # A non-markdown file has no rendered text of its own: it lands as a verbatim copy of
-# its source, which is also how it keeps its file mode.
+# its source.
 @dataclass(frozen=True, slots=True)
 class _Artifact:
     source: Path
     destination: DestinationPath
     text: Markdown | None
 
-    def content(self) -> bytes:
+    def landed(self) -> Landed:
         if self.text is None:
-            return self.source.read_bytes()
-        return self.text.encode("utf-8")
+            return Landed.copied(self.source)
+        return Landed.rendered(self.text)
 
 
 def render(
@@ -108,7 +109,7 @@ def render(
 # that it does not.
 def _land(mode: Mode, output_dir: OutputDir, artifact: _Artifact) -> list[Failure]:
     if mode is Mode.CHECK:
-        stale = outdated(output_dir, artifact.destination, artifact.content())
+        stale = outdated(output_dir, artifact.destination, artifact.landed())
         return [] if stale is None else [stale]
     target = output_dir.root / artifact.destination
     target.parent.mkdir(parents=True, exist_ok=True)
