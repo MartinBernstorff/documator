@@ -1,6 +1,6 @@
 [project]
 name = "documator"
-version = "0.1.0"
+dynamic = ["version"]
 description = "A documentation tool"
 readme = "README.md"
 authors = [
@@ -19,8 +19,19 @@ dependencies = [
 documator = "documator.cli:main"
 
 [build-system]
-requires = ["uv_build>=0.11.32,<0.12.0"]
-build-backend = "uv_build"
+# uv_build rejects `dynamic = ["version"]`, so the version cannot come from the git tag there.
+requires = ["hatchling>=1.27.0", "hatch-vcs>=0.5.0"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/documator"]
+
+[tool.semantic_release]
+# No version_toml: the version lives only in the tag, so nothing is written back to main.
+build_command = ""
 
 [dependency-groups]
 dev = [
