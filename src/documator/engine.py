@@ -1,6 +1,8 @@
 import functools
 import logging
+import os
 import stat
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -27,12 +29,14 @@ from documator.execution import (
     marker,
 )
 from documator.frontmatter import partition
+from documator.inert import skill_name, stem
 from documator.manifest import DestinationPath, Manifest, manifest_path, reserved
 from documator.parsing import (
     Block,
     DeclarationBlock,
     ExecutableBlock,
     ExecutableSpan,
+    LinkBlock,
     Markdown,
     PassthroughBlock,
     StructuralErrorBlock,
@@ -41,6 +45,9 @@ from documator.parsing import (
 )
 from documator.sections import section
 from documator.transclusion import (
+    AttachmentPath,
+    LinkedAttachment,
+    LinkedNote,
     NonNoteEmbed,
     NotePath,
     Reference,
@@ -48,6 +55,7 @@ from documator.transclusion import (
     TransclusionFailure,
     Vault,
     resolve,
+    resolve_link,
 )
 from documator.variables import (
     Interpolable,
@@ -174,6 +182,16 @@ class Obstructed:
 
     def __str__(self) -> str:
         return f"refusing to write: {self.ancestor} is not a directory"
+
+
+# A flat layout gives an attachment outside the linking skill's own bundle nowhere to
+# land, so the link is refused rather than pointed at a path that will never exist.
+@dataclass(frozen=True, slots=True)
+class Unreachable:
+    attachment: AttachmentPath
+
+    def __str__(self) -> str:
+        return f"link to {self.attachment}, which this run does not emit"
 
 
 @dataclass(frozen=True, slots=True)
@@ -309,11 +327,29 @@ class Rendered:
     failures: list[Failure]
 
 
+# Where the text being rendered lands, and where the attachments it may link to land.
+# Held per artifact rather than per note, because a link has to work from where the text
+# came to rest, not from where it was written.
+@dataclass(frozen=True, slots=True)
+class Placement:
+    document: DestinationPath
+    attachments: Mapping[AttachmentPath, DestinationPath]
+
+    def reach(self, attachment: AttachmentPath) -> RelativePath | None:
+        landed = self.attachments.get(attachment)
+        if landed is None:
+            return None
+        return RelativePath(
+            Path(os.path.relpath(landed, start=Path(self.document).parent))
+        )
+
+
 # The chain is the transclusion path that led here, so a cycle is visible from inside.
 @dataclass(frozen=True, slots=True)
 class Origin:
     vault: Vault
     chain: tuple[Target, ...]
+    placement: Placement
 
     def note(self) -> NotePath:
         return self.chain[-1].note
@@ -322,7 +358,7 @@ class Origin:
         return self.vault.beside(self.note())
 
     def entered(self, target: Target) -> Origin:
-        return Origin(self.vault, (*self.chain, target))
+        return Origin(self.vault, (*self.chain, target), self.placement)
 
 
 def worst(failures: list[Failure]) -> ExitCode:
@@ -349,6 +385,8 @@ def _render_block(
             return _Step(_execute_span(text, command, origin, timeout, scope), scope)
         case TransclusionBlock(reference):
             return _Step(_render_transclusion(reference, origin, timeout), scope)
+        case LinkBlock(text, reference):
+            return _Step(_render_link(text, reference, origin), scope)
         case StructuralErrorBlock(text, reason):
             failure = _authoring_error(text, Annotation(reason.message), origin)
             return _Step(failure, scope)
@@ -438,6 +476,42 @@ def _reported(
     # The command is kept in the note, because "exit 1" alone names nothing to go fix.
     at_fault = _failure_at(Annotation(f"{command}: {failure}"), origin, ExitCode(1))
     return Rendered(Markdown(text), [at_fault])
+
+
+# A broken link leaves one wrong word in otherwise complete prose, so it is a content
+# failure (1) rather than the structural hole an unresolvable transclusion leaves (2).
+def _render_link(text: Markdown, reference: Reference, origin: Origin) -> Rendered:
+    resolved = resolve_link(origin.vault, reference)
+    if isinstance(resolved, LinkedNote):
+        return Rendered(Markdown(_emitted(resolved)), [])
+    if isinstance(resolved, LinkedAttachment):
+        return _render_attachment(text, resolved, origin)
+    return _inline_authoring_error(text, Annotation(str(resolved)), origin)
+
+
+def _render_attachment(
+    text: Markdown, linked: LinkedAttachment, origin: Origin
+) -> Rendered:
+    reached = origin.placement.reach(linked.attachment)
+    if reached is None:
+        note = Annotation(str(Unreachable(linked.attachment)))
+        return _inline_authoring_error(text, note, origin)
+    label = linked.alias or stem(RelativePath(linked.attachment.root))
+    return Rendered(Markdown(f"[{label}]({reached.as_posix()}{_fragment(linked)})"), [])
+
+
+# A skill reference is a call the model may choose to make, so an alias has nothing to
+# relabel; a term is prose, so the alias is the sentence's own wording.
+def _emitted(linked: LinkedNote) -> str:
+    path = RelativePath(linked.note.root)
+    invoked = skill_name(path)
+    if invoked is not None:
+        return f"/{invoked}{_fragment(linked)}"
+    return linked.alias or f"{stem(path)}{_fragment(linked)}"
+
+
+def _fragment(linked: LinkedNote | LinkedAttachment) -> str:
+    return f"#{linked.fragment}" if linked.fragment else ""
 
 
 def _render_transclusion(

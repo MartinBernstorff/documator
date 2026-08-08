@@ -1,6 +1,8 @@
+import functools
 import re
 from collections.abc import Iterator
 from dataclasses import dataclass
+from enum import StrEnum, auto
 from typing import NewType
 
 from iterpy import Arr
@@ -72,6 +74,14 @@ class TransclusionBlock:
     reference: Reference
 
 
+# Carries its source, because a reference that resolves to nothing is reported by
+# handing the author back the link they wrote.
+@dataclass(frozen=True, slots=True)
+class LinkBlock:
+    text: Markdown
+    reference: Reference
+
+
 @dataclass(frozen=True, slots=True)
 class StructuralErrorBlock:
     text: Markdown
@@ -84,6 +94,7 @@ type Block = (
     | DeclarationBlock
     | ExecutableSpan
     | TransclusionBlock
+    | LinkBlock
     | StructuralErrorBlock
 )
 
@@ -146,30 +157,63 @@ class _Span:
 
 # Spans are found before embeds, so a command's content reaches the shell intact.
 def _split_prose(prose: Markdown) -> list[Block]:
-    return Arr(_pieces(prose)).map(_piece_to_blocks).flatten().to_list()
+    return _merged(Arr(_pieces(prose)).map(_piece_to_blocks).flatten().to_list())
 
 
-def _piece_to_blocks(piece: Markdown | ExecutableSpan) -> list[Block]:
+# Quoting a span cuts prose at every backtick; merging puts back the runs no other block
+# came between, so the block list stays as coarse as the source that produced it.
+def _merged(blocks: list[Block]) -> list[Block]:
+    return functools.reduce(_absorbed, blocks, [])
+
+
+def _absorbed(merged: list[Block], block: Block) -> list[Block]:
+    previous = merged[-1] if merged else None
+    if not isinstance(block, PassthroughBlock) or not isinstance(
+        previous, PassthroughBlock
+    ):
+        return [*merged, block]
+    return [*merged[:-1], PassthroughBlock(Markdown(previous.text + block.text))]
+
+
+# A link is prose documentation writes *about*, so a code span quotes it. An embed is
+# not: it keeps splitting inside a span, the way it always has.
+class Links(StrEnum):
+    RESOLVED = auto()
+    QUOTED = auto()
+
+
+@dataclass(frozen=True, slots=True)
+class _Quoted:
+    text: Markdown
+
+
+def _piece_to_blocks(piece: Markdown | ExecutableSpan | _Quoted) -> list[Block]:
     if isinstance(piece, ExecutableSpan):
         return [piece]
-    return _split_embeds(piece)
+    if isinstance(piece, _Quoted):
+        return _split_embeds(piece.text, Links.QUOTED)
+    return _split_embeds(piece, Links.RESOLVED)
 
 
-def _pieces(prose: Markdown) -> Iterator[Markdown | ExecutableSpan]:
+def _pieces(prose: Markdown) -> Iterator[Markdown | ExecutableSpan | _Quoted]:
     tokens = _tokens(prose)
     literal: list[str] = []
     index = TokenIndex(0)
     while index < len(tokens):
         span = _closed_span(tokens, index)
         command = None if span is None else _spanned_command(span.content)
-        if span is None or command is None:
-            literal.append(tokens[index] if span is None else _unescaped(span))
-            index = TokenIndex(index + 1) if span is None else span.after
+        if span is None:
+            literal.append(tokens[index])
+            index = TokenIndex(index + 1)
             continue
         if literal:
             yield Markdown("".join(literal))
             literal = []
-        yield ExecutableSpan(span.text, command)
+        yield (
+            _Quoted(Markdown(_unescaped(span)))
+            if command is None
+            else ExecutableSpan(span.text, command)
+        )
         index = span.after
     if literal:
         yield Markdown("".join(literal))
@@ -230,24 +274,44 @@ def opens_a_bang_span(line: Line) -> bool:
 
 
 # Only prose is split: inside a fence an embed is code being quoted, not a transclusion.
-def _split_embeds(prose: Markdown) -> list[Block]:
+def _split_embeds(prose: Markdown, links: Links) -> list[Block]:
     # The single capture group makes split alternate literal text with each reference.
-    return (
+    parts = (
         Arr(re.split(r"!\[\[([^\[\]\n]*)\]\]", prose))
         .enumerate()
-        .filter(lambda part: _is_embed(part) or bool(part[1]))
-        .map(_prose_or_embed)
+        .filter(lambda part: _is_captured(part) or bool(part[1]))
+        .to_list()
+    )
+    return [block for part in parts for block in _prose_or_embed(part, links)]
+
+
+def _is_captured(part: tuple[int, str]) -> bool:
+    return part[0] % 2 == 1
+
+
+# Embeds are split first, so what reaches a link is never the tail of an `![[embed]]`.
+def _prose_or_embed(part: tuple[int, str], links: Links) -> list[Block]:
+    if _is_captured(part):
+        return [TransclusionBlock(Reference(part[1]))]
+    text = Markdown(part[1])
+    if links is Links.QUOTED:
+        return [PassthroughBlock(text)]
+    return _split_links(text)
+
+
+def _split_links(prose: Markdown) -> list[Block]:
+    return (
+        Arr(re.split(r"\[\[([^\[\]\n]*)\]\]", prose))
+        .enumerate()
+        .filter(lambda part: _is_captured(part) or bool(part[1]))
+        .map(_prose_or_link)
         .to_list()
     )
 
 
-def _is_embed(part: tuple[int, str]) -> bool:
-    return part[0] % 2 == 1
-
-
-def _prose_or_embed(part: tuple[int, str]) -> Block:
-    if _is_embed(part):
-        return TransclusionBlock(Reference(part[1]))
+def _prose_or_link(part: tuple[int, str]) -> Block:
+    if _is_captured(part):
+        return LinkBlock(Markdown(f"[[{part[1]}]]"), Reference(part[1]))
     return PassthroughBlock(Markdown(part[1]))
 
 

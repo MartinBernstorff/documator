@@ -7,7 +7,6 @@ from inline_snapshot import snapshot
 from documator.domain import ExitCode, RelativePath
 from documator.engine import Failure
 from documator.execution import Annotation
-from documator.skills import Ignored
 from documator.summary import Errored, Produced, Warned, summarise
 from documator.transclusion import NotePath
 
@@ -26,7 +25,7 @@ def test_the_count_leads_and_the_errors_come_last(
                         ExitCode(1),
                     )
                 ),
-                Warned(Ignored(RelativePath(Path("loose.txt")))),
+                Warned(Annotation("loose.txt: ignored")),
                 Errored(
                     Failure(
                         NotePath(RelativePath(Path("b.md"))),
@@ -44,7 +43,7 @@ def test_the_count_leads_and_the_errors_come_last(
             ("ERROR", "3 files, 1 warning, 2 errors"),
             (
                 "WARNING",
-                "loose.txt: ignored, move it into a SKILL.md folder to bundle it",
+                "loose.txt: ignored",
             ),
             ("ERROR", "a.md: boom"),
             ("ERROR", "b.md: bang"),
@@ -67,7 +66,7 @@ def test_a_run_with_only_warnings_keeps_the_count_at_warning(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     with caplog.at_level(logging.INFO, logger="documator"):
-        summarise(Produced(2), [Warned(Ignored(RelativePath(Path("loose.txt"))))])
+        summarise(Produced(2), [Warned(Annotation("loose.txt: ignored"))])
 
     assert [record.levelname for record in caplog.records] == snapshot(
         ["WARNING", "WARNING"]

@@ -38,13 +38,16 @@ documator [--quiet] skills INPUT_DIR OUTPUT_DIR [--watch] [--timeout SECONDS]
 
 `skills` compiles the same templates into the flat `<skill-name>/SKILL.md` layout Claude's skill loader expects: nesting in the input tree is organisational only, the filename stem becomes the skill name, and the frontmatter is generated — any keys the template declares pass through, and a declared `description` wins over the name-derived placeholder.
 
+A skill is marked with an `@` on its own name: `@foo.md`, or `@bar/` for a folder holding a `SKILL.md`. Everything unmarked is a *term* — a note that names something for links to point at and compiles to nothing.
+
 An example tree might look like:
 
 ```
 my-templates/
-├── foo.md
-├── bar/
+├── @foo.md
+├── @bar/
 │   └── SKILL.md
+├── Tracer bullet.md
 ├── _hidden.md
 ```
 
@@ -73,6 +76,20 @@ and would result in:
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ```
 
+### Links
+
+A plain `[[wikilink]]` is resolved and replaced; only an embed — the same brackets behind a `!` — still pulls text in. What it becomes depends on what it points at, so the same link reads correctly in both layouts:
+
+| Target | Emits |
+| --- | --- |
+| an unmarked note — a term | its name: `[[Tracer bullet]]` → `Tracer bullet` |
+| an `@`-marked note — a skill | an invocation: `[[@grill]]` → `/grill` |
+| an attachment | a path to where it landed: `[[diagram.png]]` → `[diagram](../assets/diagram.png)` |
+
+The `@` and `_` prefixes are input-side vocabulary and never reach the reader. `[[Target|display]]` sets the wording for a term or an attachment; a skill ignores it, because `/grill` is a call rather than prose. A `#fragment` rides along on whatever the link emits.
+
+Renaming a note is therefore a rename everywhere it is mentioned, and a link that resolves to nothing — or to two notes at once — is reported and fails the run with exit 1, leaving the source `[[link]]` in place so the author can see what they wrote. A link inside a fence or a code span is quoted rather than resolved, which is how this table is written; so is anything a command prints.
+
 ### Output
 
 Every problem is logged where it arises and again at the end of the run, so a long render does not bury its errors above the scrollback. The run closes with a count — `12 files, 1 warning, 2 errors` — followed by the warnings and then the errors, worst news nearest the prompt. Under `--watch` each recompile closes the same way, since a session has no other end to report at.
@@ -82,14 +99,15 @@ Log lines are coloured by level when stderr is a terminal, and plain when it is 
 ### Try it
 
 ```sh
-mkdir -p docs/guides/plan/references out compiled
-printf '# Review\n\nRead the diff before the description.\n' > docs/guides/review.md
-printf -- '---\ndescription: Plan a change\n---\n# Plan\n' > docs/guides/plan/SKILL.md
-echo '# Spec' > docs/guides/plan/references/spec.md
+mkdir -p 'docs/guides/@plan/references' out compiled
+printf '# Review\n\nRun [[@plan]] against a [[Tracer bullet]] first.\n' > 'docs/guides/@review.md'
+printf -- '---\ndescription: Plan a change\n---\n# Plan\n' > 'docs/guides/@plan/SKILL.md'
+echo '# Spec' > 'docs/guides/@plan/references/spec.md'
+echo 'A thin vertical slice.' > 'docs/Tracer bullet.md'
 uv run documator render docs out
 uv run documator skills docs compiled
 ```
 
-Two layouts over one tree. `render` mirrors it into `out/`, so `guides/review.md` stays `guides/review.md`. `skills` flattens it into `compiled/`: the bare `guides/review.md` becomes `review/SKILL.md` with a name-derived `description`, and the `guides/plan/` folder becomes `plan/SKILL.md` — carrying its declared `description` through — with `references/spec.md` bundled beside it as `plan/references/spec.md`.
+Two layouts over one tree. `render` mirrors it into `out/`, so `guides/@review.md` stays `guides/review.md`. `skills` flattens it into `compiled/`: the bare `guides/@review.md` becomes `review/SKILL.md` with a name-derived `description`, and the `guides/@plan/` folder becomes `plan/SKILL.md` — carrying its declared `description` through — with `references/spec.md` bundled beside it as `plan/references/spec.md`. `Tracer bullet.md` compiles to nothing in either layout; it exists so the link in the review has something to name.
 
 This block is extracted verbatim and run by `test_readme.py`.

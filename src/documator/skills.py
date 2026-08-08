@@ -1,3 +1,4 @@
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -15,6 +16,7 @@ from documator.domain import (
 from documator.engine import (
     Failure,
     Origin,
+    Placement,
     blocked,
     directory_conflict,
     log,
@@ -25,7 +27,7 @@ from documator.engine import (
     worst,
 )
 from documator.frontmatter import SkillName, Template, compose, split
-from documator.inert import PathClass, classify
+from documator.inert import PathClass, classify, skill_name
 from documator.manifest import (
     DestinationPath,
     Manifest,
@@ -38,6 +40,9 @@ from documator.parsing import Markdown
 from documator.structural import (
     Collision,
     Derived,
+    MarkedAttachment,
+    MarkedInsideSkill,
+    Misplaced,
     Reason,
     StructuralFailure,
     Unreadable,
@@ -45,7 +50,7 @@ from documator.structural import (
     report,
     unusable,
 )
-from documator.summary import Errored, Problem, Produced, Warned, summarise
+from documator.summary import Errored, Problem, Produced, summarise
 from documator.transclusion import (
     AttachmentPath,
     NotePath,
@@ -85,7 +90,8 @@ class _Artifact:
     failures: list[Failure]
 
 
-# A folder holding SKILL.md is a hard leaf, so skills never nest.
+# A marked folder holding SKILL.md is a hard leaf, so skills never nest. Everything
+# unmarked is a term: it names something for links to point at and compiles to nothing.
 def _templates(input_dir: InputDir, current: RelativePath) -> list[_Template]:
     entries = Arr(
         sorted((input_dir.root / current).iterdir(), key=lambda entry: entry.name)
@@ -95,7 +101,8 @@ def _templates(input_dir: InputDir, current: RelativePath) -> list[_Template]:
     files = entries.filter(lambda entry: entry.is_file())
     # Matched on the exact name, so a case-insensitive filesystem cannot report a
     # `skill.md` as the manifest and then bundle that same file over the output.
-    if current != Path() and files.any(lambda entry: entry.name == "SKILL.md"):
+    marked = current != Path() and skill_name(current) is not None
+    if marked and files.any(lambda entry: entry.name == "SKILL.md"):
         return [_folder_template(input_dir, current)]
     nested = (
         entries.filter(lambda entry: entry.is_dir())
@@ -104,12 +111,20 @@ def _templates(input_dir: InputDir, current: RelativePath) -> list[_Template]:
         )
         .flatten()
     )
-    bare = files.filter(lambda entry: entry.suffix.lower() == ".md").map(
-        lambda entry: _Template(
-            Derived(SkillName(entry.stem), RelativePath(current / entry.name)), ()
-        )
+    bare = (
+        files.filter(lambda entry: entry.suffix.lower() == ".md")
+        .map(lambda entry: RelativePath(current / entry.name))
+        .filter(lambda path: skill_name(path) is not None)
+        .map(lambda path: _Template(Derived(_name(path), path), ()))
     )
     return [*nested, *bare]
+
+
+# Guarded by the caller, which only builds a template for a path the mark named.
+def _name(path: RelativePath) -> SkillName:
+    marked = skill_name(path)
+    assert marked is not None
+    return SkillName(marked)
 
 
 def _folder_template(input_dir: InputDir, folder: RelativePath) -> _Template:
@@ -122,7 +137,7 @@ def _folder_template(input_dir: InputDir, folder: RelativePath) -> _Template:
         .to_list()
     )
     return _Template(
-        Derived(SkillName(folder.name), RelativePath(source)), tuple(bundle)
+        Derived(_name(RelativePath(source)), RelativePath(source)), tuple(bundle)
     )
 
 
@@ -131,20 +146,30 @@ def _artifacts(
 ) -> list[_Artifact]:
     derived = validated.template.derived
     note = NotePath(derived.source)
-    origin = Origin(vault, (Target.whole(note),))
+    folder = RelativePath(derived.source.parent)
+    # Only the skill's own bundle is reachable: a flat layout gives an attachment
+    # anywhere else in the vault no place of its own to land.
+    landed = {
+        AttachmentPath(path): DestinationPath(
+            RelativePath(Path(derived.name) / path.relative_to(folder))
+        )
+        for path in validated.template.bundle
+        if path.suffix.lower() != ".md"
+    }
+    compiled_at = DestinationPath(RelativePath(Path(derived.name) / "SKILL.md"))
+    origin = Origin(vault, (Target.whole(note),), Placement(compiled_at, landed))
     rendered = render_markdown(validated.authored.body, origin, timeout)
     compiled = _Artifact(
         _Verb.COMPILED,
         TemplatePath(derived.source),
-        DestinationPath(RelativePath(Path(derived.name) / "SKILL.md")),
+        compiled_at,
         compose(derived.name, validated.authored.declared, rendered.text),
         rendered.failures,
     )
-    folder = RelativePath(derived.source.parent)
     return [
         compiled,
         *(
-            _bundled(derived.name, path, folder, vault, timeout)
+            _bundled(derived.name, path, folder, landed, vault, timeout)
             for path in validated.template.bundle
         ),
     ]
@@ -155,6 +180,7 @@ def _bundled(
     name: SkillName,
     path: RelativePath,
     folder: RelativePath,
+    landed: Mapping[AttachmentPath, DestinationPath],
     vault: Vault,
     timeout: TimeoutSeconds,
 ) -> _Artifact:
@@ -168,7 +194,7 @@ def _bundled(
     # A bundled note is a document, not a skill, so it renders without frontmatter.
     rendered = render_markdown(
         Markdown(vault.read(note)),
-        Origin(vault, (Target.whole(note),)),
+        Origin(vault, (Target.whole(note),), Placement(target, landed)),
         timeout,
     )
     return _Artifact(_Verb.BUNDLED, source, target, rendered.text, rendered.failures)
@@ -211,6 +237,32 @@ def _unique(
     )
 
 
+# The mark names one node, so it is legal only where a skill can stand: on a note, or on
+# the folder that holds one. Everywhere else it is reported rather than stripped.
+def _misplaced(input_dir: InputDir, templates: list[_Template]) -> list[Misplaced]:
+    bundled = [
+        MarkedInsideSkill(path)
+        for template in templates
+        for path in template.bundle
+        if any(
+            part.startswith("@")
+            for part in path.relative_to(template.derived.source.parent).parts
+        )
+    ]
+    inside = {failure.path for failure in bundled}
+    return [
+        *bundled,
+        *(
+            MarkedAttachment(path)
+            for path in relative_files(input_dir)
+            if path.suffix.lower() != ".md"
+            and path.name.startswith("@")
+            and classify(path) is PathClass.OPEN
+            and path not in inside
+        ),
+    ]
+
+
 def _read(template: _Template, vault: Vault) -> _Validated | StructuralFailure:
     derived = template.derived
     try:
@@ -246,24 +298,12 @@ def _unclaimed(input_dir: InputDir, templates: list[_Template]) -> list[Relative
     )
 
 
-@dataclass(frozen=True, slots=True)
-class Ignored:
-    path: RelativePath
-
-    def __str__(self) -> str:
-        return f"{self.path}: ignored, move it into a SKILL.md folder to bundle it"
-
-
-# The flat layout gives a loose file no destination, so ignoring beats an error that
-# would make exit 2 permanent; the level stays graded so a real mistake stands out. A
-# path that could never have been a skill is noise, so it is logged but not summarised.
-def _report_ignored(path: RelativePath) -> Ignored | None:
-    if classify(path) is not PathClass.OPEN:
-        log.info("ignored %s", path)
-        return None
-    ignored = Ignored(path)
-    log.warning("%s", ignored)
-    return ignored
+# An unmarked note is a term and an unmarked file is its own business: producing no
+# skill is what they are for, so the run says so at info and leaves the warning channel
+# for mistakes. A link that wanted one of them is the error, and it is raised at the
+# link.
+def _report_ignored(path: RelativePath) -> None:
+    log.info("ignored %s", path)
 
 
 def skills(
@@ -277,17 +317,19 @@ def skills(
     vault = without_invisible_notes(index(input_dir))
 
     templates = _templates(input_dir, RelativePath(Path()))
-    ignored = [
-        outcome
-        for outcome in Arr(_unclaimed(input_dir, templates)).map(_report_ignored)
-        if outcome is not None
-    ]
+    for path in _unclaimed(input_dir, templates):
+        _report_ignored(path)
 
     named, misnamed = _named(templates)
     unique, colliding = _unique(named)
     validated, unusable_sources = _usable(unique, vault)
     # Logged as discovered; the report is what re-orders them.
-    structural = [*misnamed, *colliding, *unusable_sources]
+    structural = [
+        *_misplaced(input_dir, templates),
+        *misnamed,
+        *colliding,
+        *unusable_sources,
+    ]
     for failure in structural:
         log.error("%s", failure)
 
@@ -343,7 +385,6 @@ def skills(
     write_manifest(output_dir, Manifest(written))
 
     problems: list[Problem] = [
-        *(Warned(warning) for warning in ignored),
         *(Errored(failure) for failure in structural),
         *(Errored(failure) for failure in content),
     ]

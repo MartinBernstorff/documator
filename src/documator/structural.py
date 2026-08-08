@@ -84,8 +84,29 @@ class Unreadable:
         return f"{self.derived}: the template cannot be read: {self.reason}"
 
 
+# The mark says "this is a skill", so a path that cannot become one is the author asking
+# for something the compiler will not do, rather than a mark to quietly ignore.
+@dataclass(frozen=True, slots=True)
+class MarkedAttachment:
+    path: RelativePath
+
+    def __str__(self) -> str:
+        return f"{self.path}: only a note can be marked as a skill"
+
+
+@dataclass(frozen=True, slots=True)
+class MarkedInsideSkill:
+    path: RelativePath
+
+    def __str__(self) -> str:
+        return f"{self.path}: already inside a skill, and skills do not nest"
+
+
+type Misplaced = MarkedAttachment | MarkedInsideSkill
 type UnusableSource = EmptyTemplate | DeclaredName | EmptyDescription
-type StructuralFailure = InvalidName | Collision | UnusableSource | Unreadable
+type StructuralFailure = (
+    InvalidName | Collision | UnusableSource | Unreadable | Misplaced
+)
 
 
 def invalid_name(derived: Derived) -> InvalidName | None:
@@ -108,6 +129,8 @@ def unusable(derived: Derived, template: Template) -> UnusableSource | None:
 def _at(failure: StructuralFailure) -> str:
     if isinstance(failure, Collision):
         return str(failure.sources[0])
+    if isinstance(failure, MarkedAttachment | MarkedInsideSkill):
+        return str(failure.path)
     return str(failure.derived.source)
 
 
