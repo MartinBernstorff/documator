@@ -40,6 +40,7 @@ from documator.manifest import (
 )
 from documator.notice import annotated
 from documator.parsing import Markdown
+from documator.sections import emitted
 from documator.structural import Misplaced, misplaced
 from documator.summary import Errored, Produced, summarise
 from documator.transclusion import NotePath, Target, index
@@ -152,7 +153,7 @@ def render(
             # frontmatter describes the note, so no block and no link rewrites it.
             authored = partition(Markdown(source.read_text(encoding="utf-8")))
             rendered = render_markdown(
-                authored.body,
+                emitted(authored.body),
                 Origin(
                     vault,
                     (Target.whole(NotePath(relative)),),

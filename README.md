@@ -76,6 +76,14 @@ and would result in:
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ```
 
+### Notes
+
+`_` means the same thing on a heading as it does on a path segment: this is scratch, and it emits nothing. A `## _Notes` section — or `## _Improvements`, or whatever you want to call it — is somewhere to collect thoughts beside the work they are about, and it is dropped from the output along with every subsection under it. Both commands drop it, from a `SKILL.md`, a mirrored note and a bundled reference alike.
+
+It is dropped before links resolve and before any command block runs, so a `[[dangling link]]` there cannot fail the run and a command there never executes. That is what makes the section a safe place to be sloppy — and the reason not to park a link you are relying on in one, because the rename-everywhere guarantee does not reach into it.
+
+Embedding a whole note leaves its marked sections behind, at any depth, so no embed ever drags someone else's scratch into yours. An embed whose `#fragment` names a marked section still gets it, because that is an author asking for it by name. A heading you want rendered that happens to start with `_` should be a code span, `` ## `_private` ``, which does not take the mark.
+
 ### Links
 
 A plain `[[wikilink]]` is resolved and replaced; only an embed — the same brackets behind a `!` — still pulls text in. What it becomes depends on what it points at, so the same link reads correctly in both layouts:
