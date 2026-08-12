@@ -505,7 +505,7 @@ def _emitted(linked: LinkedNote) -> str:
     path = RelativePath(linked.note.root)
     invoked = skill_name(path)
     if invoked is not None:
-        return f"/{invoked}{_fragment(linked)}"
+        return f"`/{invoked}{_fragment(linked)}`"
     return f"{linked.wording.alias or stem(path)}{_fragment(linked)}"
 
 

@@ -91,10 +91,10 @@ A plain `[[wikilink]]` is resolved and replaced; only an embed — the same brac
 | Target | Emits |
 | --- | --- |
 | an unmarked note — a term | its name: `[[Tracer bullet]]` → `Tracer bullet` |
-| an `@`-marked note — a skill | an invocation: `[[@grill]]` → `/grill` |
+| an `@`-marked note — a skill | an invocation, in a code span: `[[@grill]]` → `` `/grill` `` |
 | an attachment | a path to where it landed: `[[diagram.png]]` → `[diagram](../assets/diagram.png)` |
 
-The `@` and `_` prefixes are input-side vocabulary and never reach the reader. `[[Target|display]]` sets the wording for a term or an attachment; a skill ignores it, because `/grill` is a call rather than prose. A `#fragment` rides along on whatever the link emits.
+The `@` and `_` prefixes are input-side vocabulary and never reach the reader. `[[Target|display]]` sets the wording for a term or an attachment; a skill ignores it, because `/grill` is a call rather than prose, and the call is emitted in a code span so it reads as one. A `#fragment` rides along on whatever the link emits.
 
 Renaming a note is therefore a rename everywhere it is mentioned, and a link that resolves to nothing — or to two notes at once — is reported and fails the run with exit 1, leaving the source `[[link]]` in place so the author can see what they wrote. A link inside a fence or a code span is quoted rather than resolved, which is how this table is written; so is anything a command prints.
 
