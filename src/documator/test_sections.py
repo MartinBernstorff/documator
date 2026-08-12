@@ -206,6 +206,51 @@ use it
 """)
 
 
+def test_a_divider_closes_a_marked_section() -> None:
+    assert section(
+        Markdown("## _Notes\n\nscratch\n\n---\n\nplain prose\n"),
+        Target.whole(NotePath(Path("Shared.md"))),
+    ) == snapshot("plain prose\n")
+
+
+def test_a_divider_inside_a_fence_does_not_close_a_marked_section() -> None:
+    assert section(
+        Markdown("## _Notes\n\n```\n---\n```\n\nstill scratch\n\n## Usage\n\nuse it\n"),
+        Target.whole(NotePath(Path("Shared.md"))),
+    ) == snapshot("""\
+## Usage
+
+use it
+""")
+
+
+def test_a_rule_underlining_prose_is_a_heading_rather_than_a_divider() -> None:
+    assert section(
+        Markdown("## _Notes\n\nDeeper\n------\n\nmore scratch\n\n## Usage\n\nuse it\n"),
+        Target.whole(NotePath(Path("Shared.md"))),
+    ) == snapshot("""\
+Deeper
+------
+
+more scratch
+
+## Usage
+
+use it
+""")
+
+
+def test_a_divider_closes_a_marked_section_before_the_next_heading() -> None:
+    assert section(
+        Markdown("## _Notes\n\nscratch\n\n---\n\n## Usage\n\nuse it\n"),
+        Target.whole(NotePath(Path("Shared.md"))),
+    ) == snapshot("""\
+## Usage
+
+use it
+""")
+
+
 def test_a_code_span_heading_does_not_take_the_mark() -> None:
     assert section(
         Markdown("## `_private`\n\ndocumented\n"),

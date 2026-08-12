@@ -35,14 +35,22 @@ class _Heading:
 
 
 @dataclass(frozen=True, slots=True)
+class _Break:
+    at: LineIndex
+
+
+@dataclass(frozen=True, slots=True)
 class _Prose:
     line: Line
     at: LineIndex
 
 
+_Mark = _Heading | _Break
+
+
 # Inside a fence a `#` is code being quoted, so a section documenting shell comments
 # neither truncates itself nor lends out half an open fence.
-def _scanned(lines: list[Line]) -> Iterator[_Heading]:
+def _scanned(lines: list[Line]) -> Iterator[_Mark]:
     fence: Delimiter | None = None
     above: _Prose | None = None
     for offset, line in enumerate(lines):
@@ -56,7 +64,7 @@ def _scanned(lines: list[Line]) -> Iterator[_Heading]:
             fence = opening
             above = None
             continue
-        found = _heading(at, line) or _underlined(above, line)
+        found = _heading(at, line) or _underlined(above, line) or _rule(at, line)
         if found is not None:
             yield found
         above = _Prose(line, at)
@@ -85,6 +93,11 @@ def _underlined(above: _Prose | None, line: Line) -> _Heading | None:
     return _Heading(level, _closed(above.line), above.at)
 
 
+# A rule that underlines nothing is a divider, drawn under the writing above it.
+def _rule(at: LineIndex, line: Line) -> _Break | None:
+    return _Break(at) if re.fullmatch(r"-{3,}[ \t]*", line.strip()) else None
+
+
 # A closed ATX heading names the same section as an open one, so the trailing run goes.
 def _closed(text: Line) -> HeadingText:
     return HeadingText(re.sub(r"[ \t]+#+$", "", text.strip()))
@@ -92,11 +105,11 @@ def _closed(text: Line) -> HeadingText:
 
 def section(source: Markdown, target: Target) -> Markdown | SectionFailure:
     lines = _lines(partition(source).body)
-    headings = list(_scanned(lines))
-    reached = _walk(headings, target, LineIndex(len(lines)))
+    marks = list(_scanned(lines))
+    reached = _walk(_headings(marks), target, LineIndex(len(lines)))
     if not isinstance(reached, _Extent):
         return reached
-    return _trimmed(_kept(lines, headings, reached))
+    return _trimmed(_kept(lines, marks, reached))
 
 
 # A note's own body is its whole-note extent, so the same rule drops its marked
@@ -107,6 +120,14 @@ def emitted(body: Markdown) -> Markdown:
     whole = _Extent(LineIndex(0), LineIndex(len(lines)), HeadingLevel(0))
     kept = _kept(lines, list(_scanned(lines)), whole)
     return body if kept == lines else _trimmed(kept)
+
+
+def _headings(marks: list[_Mark]) -> list[_Heading]:
+    return [mark for mark in marks if isinstance(mark, _Heading)]
+
+
+def _breaks(marks: list[_Mark]) -> list[LineIndex]:
+    return [mark.at for mark in marks if isinstance(mark, _Break)]
 
 
 def _lines(body: Markdown) -> list[Line]:
@@ -183,11 +204,20 @@ def _end(headings: list[_Heading], found: _Heading, limit: LineIndex) -> LineInd
 # opens emits nothing. Only sections nested *inside* the extent go: an extent's own root
 # is not nested in itself, so an embed naming a marked section directly still gets it.
 # Read off the authored text rather than the match key, which strips `_` as emphasis.
-def _kept(lines: list[Line], headings: list[_Heading], extent: _Extent) -> list[Line]:
+def _kept(lines: list[Line], marks: list[_Mark], extent: _Extent) -> list[Line]:
+    headings = _headings(marks)
+    breaks = _breaks(marks)
     dropped = (
         Arr(_nested(headings, extent))
         .filter(lambda heading: heading.text.root.startswith("_"))
-        .map(lambda heading: range(heading.at, _end(headings, heading, extent.end)))
+        .map(
+            lambda heading: range(
+                heading.at,
+                _closed_off(
+                    lines, heading, _end(headings, heading, extent.end), breaks
+                ),
+            )
+        )
         .to_list()
     )
     return [
@@ -195,6 +225,22 @@ def _kept(lines: list[Line], headings: list[_Heading], extent: _Extent) -> list[
         for at in range(extent.start, extent.end)
         if not any(at in span for span in dropped)
     ]
+
+
+# A divider under scratch is where the author stopped scratching, so the marked section
+# ends there rather than at the next heading. The rule and the air under it go with it:
+# left behind they divide nothing, and a rule landing at the top of the output would be
+# read as the opening of the note's frontmatter.
+def _closed_off(
+    lines: list[Line], found: _Heading, end: LineIndex, breaks: list[LineIndex]
+) -> LineIndex:
+    within = Arr(breaks).filter(lambda at: found.at < at < end).to_list()
+    if not within:
+        return end
+    after = (
+        Arr(range(within[0] + 1, end)).filter(lambda at: lines[at].strip()).to_list()
+    )
+    return LineIndex(after[0]) if after else end
 
 
 # Trailing air belongs to whatever followed the section in its own note, not the
