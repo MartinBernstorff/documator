@@ -143,6 +143,80 @@ more
 """)
 
 
+def test_a_marked_heading_drops_its_section_from_the_whole_note() -> None:
+    assert section(
+        Markdown("## Usage\n\nuse it\n\n## _Notes\n\nscratch\n"),
+        Target.whole(NotePath(Path("Shared.md"))),
+    ) == snapshot("""\
+## Usage
+
+use it
+""")
+
+
+def test_a_marked_section_named_directly_is_still_lent_out() -> None:
+    assert section(
+        Markdown("## Usage\n\nuse it\n\n## _Notes\n\nscratch\n"),
+        Target(NotePath(Path("Shared.md")), HeadingPath((HeadingText("_Notes"),))),
+    ) == snapshot("""\
+## _Notes
+
+scratch
+""")
+
+
+def test_a_marked_heading_takes_its_subsections_with_it() -> None:
+    assert section(
+        Markdown(
+            "## Usage\n\nuse it\n\n## _Notes\n\nscratch\n\n### Deeper\n\nmore scratch\n"
+            "\n## Caveats\n\nmind it\n"
+        ),
+        Target.whole(NotePath(Path("Shared.md"))),
+    ) == snapshot("""\
+## Usage
+
+use it
+
+## Caveats
+
+mind it
+""")
+
+
+def test_a_marked_underlined_heading_drops_its_section() -> None:
+    assert section(
+        Markdown("Usage\n-----\n\nuse it\n\n_Notes\n------\n\nscratch\n"),
+        Target.whole(NotePath(Path("Shared.md"))),
+    ) == snapshot("""\
+Usage
+-----
+
+use it
+""")
+
+
+def test_a_marked_heading_nested_under_a_named_section_drops_with_it() -> None:
+    assert section(
+        Markdown("## Usage\n\nuse it\n\n### _Notes\n\nscratch\n"),
+        Target(NotePath(Path("Shared.md")), HeadingPath((HeadingText("Usage"),))),
+    ) == snapshot("""\
+## Usage
+
+use it
+""")
+
+
+def test_a_code_span_heading_does_not_take_the_mark() -> None:
+    assert section(
+        Markdown("## `_private`\n\ndocumented\n"),
+        Target.whole(NotePath(Path("Shared.md"))),
+    ) == snapshot("""\
+## `_private`
+
+documented
+""")
+
+
 def test_a_hard_line_break_ending_a_section_survives() -> None:
     lent = section(
         Markdown("## Usage\n\nfirst  \n\n\n## Notes\n\nnope\n"),

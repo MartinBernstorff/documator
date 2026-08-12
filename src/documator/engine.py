@@ -43,7 +43,7 @@ from documator.parsing import (
     TransclusionBlock,
     parse,
 )
-from documator.sections import section
+from documator.sections import emitted, section
 from documator.transclusion import (
     AttachmentPath,
     LinkedAttachment,
@@ -529,7 +529,9 @@ def _render_target(target: Target, origin: Origin, timeout: TimeoutSeconds) -> R
     source = Markdown(origin.vault.read(target.note))
     # The note's own frontmatter describes the note, not the text it lends out, so only
     # its body crosses the boundary.
-    lent = partition(source).body if not target.path else section(source, target)
+    lent = (
+        emitted(partition(source).body) if not target.path else section(source, target)
+    )
     # Tested on the markdown rather than on each failure type, so a section failure
     # added later cannot slip through and be rendered as if it were a body.
     if not isinstance(lent, str):

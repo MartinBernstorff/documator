@@ -26,7 +26,7 @@ from documator.engine import (
     report_conflict,
     worst,
 )
-from documator.frontmatter import SkillName, Template, compose, split
+from documator.frontmatter import SkillName, Template, compose, partition, split
 from documator.inert import PathClass, classify, skill_name
 from documator.manifest import (
     DestinationPath,
@@ -37,6 +37,7 @@ from documator.manifest import (
 )
 from documator.notice import annotated
 from documator.parsing import Markdown
+from documator.sections import emitted
 from documator.structural import (
     Collision,
     Derived,
@@ -162,7 +163,7 @@ def _artifacts(
     }
     compiled_at = DestinationPath(RelativePath(Path(derived.name) / "SKILL.md"))
     origin = Origin(vault, (Target.whole(note),), Placement(compiled_at, landed))
-    rendered = render_markdown(validated.authored.body, origin, timeout)
+    rendered = render_markdown(emitted(validated.authored.body), origin, timeout)
     compiled = _Artifact(
         _Verb.COMPILED,
         TemplatePath(derived.source),
@@ -195,9 +196,11 @@ def _bundled(
             _Verb.BUNDLED, source, target, vault.read_bytes(AttachmentPath(path)), []
         )
     note = NotePath(path)
-    # A bundled note is a document, not a skill, so it renders without frontmatter.
+    # A bundled note is a document rather than a skill, so its frontmatter is prose the
+    # reader keeps: split off only so the scratch rule sees a body, then handed back.
+    authored = partition(Markdown(vault.read(note)))
     rendered = render_markdown(
-        Markdown(vault.read(note)),
+        Markdown(authored.preamble + emitted(authored.body)),
         Origin(vault, (Target.whole(note),), Placement(target, landed)),
         timeout,
     )

@@ -91,11 +91,26 @@ def _closed(text: Line) -> HeadingText:
 
 
 def section(source: Markdown, target: Target) -> Markdown | SectionFailure:
-    lines = [Line(line) for line in partition(source).body.splitlines(keepends=True)]
-    reached = _walk(list(_scanned(lines)), target, LineIndex(len(lines)))
+    lines = _lines(partition(source).body)
+    headings = list(_scanned(lines))
+    reached = _walk(headings, target, LineIndex(len(lines)))
     if not isinstance(reached, _Extent):
         return reached
-    return _trimmed(lines[reached.start : reached.end])
+    return _trimmed(_kept(lines, headings, reached))
+
+
+# A note's own body is its whole-note extent, so the same rule drops its marked
+# sections. A body carrying none is handed back byte for byte, since trimming a note
+# that asked for nothing would rewrite the trailing air of every note in the vault.
+def emitted(body: Markdown) -> Markdown:
+    lines = _lines(body)
+    whole = _Extent(LineIndex(0), LineIndex(len(lines)), HeadingLevel(0))
+    kept = _kept(lines, list(_scanned(lines)), whole)
+    return body if kept == lines else _trimmed(kept)
+
+
+def _lines(body: Markdown) -> list[Line]:
+    return [Line(line) for line in body.splitlines(keepends=True)]
 
 
 @dataclass(frozen=True, slots=True)
@@ -162,6 +177,24 @@ def _end(headings: list[_Heading], found: _Heading, limit: LineIndex) -> LineInd
         .to_list()
     )
     return following[0].at if following else limit
+
+
+# A `_`-marked heading is scratch the author keeps beside the work, so the section it
+# opens emits nothing. Only sections nested *inside* the extent go: an extent's own root
+# is not nested in itself, so an embed naming a marked section directly still gets it.
+# Read off the authored text rather than the match key, which strips `_` as emphasis.
+def _kept(lines: list[Line], headings: list[_Heading], extent: _Extent) -> list[Line]:
+    dropped = (
+        Arr(_nested(headings, extent))
+        .filter(lambda heading: heading.text.root.startswith("_"))
+        .map(lambda heading: range(heading.at, _end(headings, heading, extent.end)))
+        .to_list()
+    )
+    return [
+        lines[at]
+        for at in range(extent.start, extent.end)
+        if not any(at in span for span in dropped)
+    ]
 
 
 # Trailing air belongs to whatever followed the section in its own note, not the
