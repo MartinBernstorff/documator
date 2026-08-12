@@ -58,6 +58,8 @@ and would result in:
 
 It is dropped before links resolve and before any command block runs, so a `[[dangling link]]` there cannot fail the run and a command there never executes. That is what makes the section a safe place to be sloppy — and the reason not to park a link you are relying on in one, because the rename-everywhere guarantee does not reach into it.
 
+A marked section runs to the next heading at its own level or above, or to a `---` divider — whichever comes first. The divider is how you close scratch that sits in the middle of a section rather than at the end of the note: the rule and the blank air under it are dropped along with the scratch, and the prose below goes on belonging to the heading above. A `---` sitting directly under a line of text is that line's underline, so it names a section instead of closing one, and a `---` inside a fence is code.
+
 Embedding a whole note leaves its marked sections behind, at any depth, so no embed ever drags someone else's scratch into yours. An embed whose `#fragment` names a marked section still gets it, because that is an author asking for it by name. A heading you want rendered that happens to start with `_` should be a code span, `` ## `_private` ``, which does not take the mark.
 
 ### Links
