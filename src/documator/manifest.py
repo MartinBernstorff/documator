@@ -42,7 +42,11 @@ def write_manifest(output_dir: OutputDir, manifest: Manifest) -> None:
         str(template): str(destination)
         for template, destination in manifest.root.items()
     }
-    manifest_path(output_dir).write_text(
+    # Swapped into place in one step, because a manifest truncated halfway reads as
+    # "nothing is tracked", which disowns every file the run has already written.
+    scratch = manifest_path(output_dir).with_suffix(".tmp")
+    scratch.write_text(
         json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
         encoding="utf-8",
     )
+    scratch.replace(manifest_path(output_dir))

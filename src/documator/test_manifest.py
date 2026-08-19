@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import pytest
 from inline_snapshot import snapshot
 
 from documator.domain import InputDir, OutputDir, RelativePath, TimeoutSeconds
@@ -200,6 +201,45 @@ def test_the_manifest_claims_every_file_before_the_first_one_is_written(
   "b.md": "b.md"
 }
 ```
+""")
+
+
+# The reported bug: a run died between writing a skill and recording it, and every run
+# after that refused documator's own output as somebody else's.
+def test_a_skill_written_by_a_run_that_died_is_overwritten_by_the_next_one(
+    tmp_path: Path,
+) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              @alpha.md | # Alpha\\n
+              @zeta.md | # Zeta\\n
+            out
+              zeta
+        """),
+    )
+    # A directory the run cannot write into kills it mid-loop, after alpha has landed.
+    (tmp_path / "out" / "zeta").chmod(0o500)
+    with pytest.raises(PermissionError):
+        skills(
+            InputDir(tmp_path / "in"), OutputDir(tmp_path / "out"), TimeoutSeconds(10.0)
+        )
+    assert (tmp_path / "out" / "alpha" / "SKILL.md").is_file()
+    (tmp_path / "out" / "zeta").chmod(0o700)
+
+    assert (
+        skills(
+            InputDir(tmp_path / "in"), OutputDir(tmp_path / "out"), TimeoutSeconds(10.0)
+        )
+        == 0
+    )
+
+    assert _manifest(tmp_path / "out") == snapshot("""\
+{
+  "@alpha.md": "alpha/SKILL.md",
+  "@zeta.md": "zeta/SKILL.md"
+}
 """)
 
 
