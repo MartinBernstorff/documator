@@ -12,11 +12,14 @@ from documator.domain import (
     TimeoutSeconds,
 )
 from documator.engine import (
+    Allocation,
+    Claim,
     Failure,
     Landed,
     Mode,
     Origin,
     Placement,
+    allocate,
     blocked,
     directory_conflict,
     log,
@@ -135,10 +138,24 @@ def render(
         for attachment in vault.attachments
     }
 
+    # Check mode writes nothing, so it has nothing to claim: it settles every refusal at
+    # the site that reports it, one file at a time.
+    intended: Allocation | None = None
+    if mode is Mode.WRITE:
+        intended = allocate(
+            output_dir,
+            tracked,
+            [Claim(TemplatePath(path), _mirrored(path)) for path in relative_paths],
+        )
+        failures.extend(intended.refusals)
+        write_manifest(output_dir, intended.claimed)
+
     written: dict[TemplatePath, DestinationPath] = {}
     for relative in relative_paths:
         template = TemplatePath(relative)
         destination = _mirrored(relative)
+        if intended is not None and not intended.covers(destination):
+            continue
         # Checked before rendering, so a file that cannot land never runs its blocks.
         refused = blocked(
             output_dir, tracked.destinations() | set(written.values()), destination
@@ -168,8 +185,8 @@ def render(
         log.info("%s %s", "checked" if mode is Mode.CHECK else "rendered", relative)
 
     if mode is Mode.WRITE:
-        # Written last and only for what really landed, so the manifest can never
-        # claim a file this run refused to write.
+        # Rewritten last and now only for what really landed, so a run that finishes
+        # leaves a manifest that claims no file it refused to write.
         write_manifest(output_dir, Manifest(written))
 
     summarise(Produced(len(written)), [Errored(failure) for failure in failures])

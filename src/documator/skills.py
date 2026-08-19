@@ -14,9 +14,11 @@ from documator.domain import (
     TimeoutSeconds,
 )
 from documator.engine import (
+    Claim,
     Failure,
     Origin,
     Placement,
+    allocate,
     blocked,
     directory_conflict,
     log,
@@ -326,8 +328,25 @@ def skills(
     content = (
         Arr(artifacts).map(lambda artifact: Arr(artifact.failures)).flatten().to_list()
     )
+    # The report answers to the run, not to a template, so it is its own source.
+    reported = Claim(TemplatePath(RelativePath(reasons)), reasons)
+    intended = allocate(
+        output_dir,
+        tracked,
+        [
+            *(Claim(artifact.source, artifact.target) for artifact in artifacts),
+            *([reported] if structural else []),
+        ],
+    )
+    content.extend(intended.refusals)
+    write_manifest(output_dir, intended.claimed)
+
     written: dict[TemplatePath, DestinationPath] = {}
     for artifact in artifacts:
+        if not intended.covers(artifact.target):
+            continue
+        # Re-checked at the write, because an artifact this run already landed can stand
+        # where a later one's parent directory belongs.
         refused = blocked(
             output_dir, tracked.destinations() | set(written.values()), artifact.target
         )
@@ -344,7 +363,7 @@ def skills(
     # rather than a skill it compiled.
     compiled = Produced(len(written))
 
-    if structural:
+    if structural and intended.covers(reasons):
         refused = blocked(
             output_dir, tracked.destinations() | set(written.values()), reasons
         )
@@ -352,11 +371,10 @@ def skills(
             content.append(refused)
         else:
             (output_dir.root / reasons).write_text(report(structural), encoding="utf-8")
-            # The report answers to the run, not to a template, so it is its own source.
-            written[TemplatePath(RelativePath(reasons))] = reasons
+            written[reported.source] = reported.target
 
-    # Written last and only for what really landed, so the manifest can never claim a
-    # file this run refused to write.
+    # Rewritten last and now only for what really landed, so a run that finishes leaves
+    # a manifest that claims no file it refused to write.
     write_manifest(output_dir, Manifest(written))
 
     problems: list[Problem] = [
