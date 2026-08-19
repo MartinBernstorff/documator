@@ -12,11 +12,14 @@ from documator.domain import (
     TimeoutSeconds,
 )
 from documator.engine import (
+    Allocation,
+    Claim,
     Failure,
     Landed,
     Mode,
     Origin,
     Placement,
+    allocate,
     blocked,
     directory_conflict,
     log,
@@ -35,7 +38,10 @@ from documator.manifest import (
     DestinationPath,
     Manifest,
     TemplatePath,
+    clear_claims,
+    read_claims,
     read_manifest,
+    write_claims,
     write_manifest,
 )
 from documator.notice import annotated
@@ -101,22 +107,23 @@ def render(
 
     # Decided before anything is rendered, so a clash costs both sides their blocks as
     # well as their output: an arbitrary winner would make the survivor a tiebreak.
-    claims = (
+    contenders = (
         Arr(relative_files(input_dir))
         .filter(lambda path: path not in rejected)
         .groupby(lambda path: str(_mirrored(path)))
     ).to_list()
     relative_paths = [
-        path for _, claimants in claims if len(claimants) == 1 for path in claimants
+        path for _, claimants in contenders if len(claimants) == 1 for path in claimants
     ]
     tracked = read_manifest(output_dir)
+    owned = tracked.destinations() | read_claims(output_dir).destinations()
     produced = {_mirrored(path) for path in relative_paths}
 
     failures: list[Failure] = [
         *(_refused(failure) for failure in misplacements),
         *(
             _claimed(_mirrored(claimants[0]), tuple(claimants))
-            for _, claimants in claims
+            for _, claimants in contenders
             if len(claimants) > 1
         ),
     ]
@@ -124,7 +131,9 @@ def render(
         failures.extend(report_orphans(output_dir, tracked, produced))
     else:
         # Pruned first, so a path this run reclaims is free before anything writes into
-        # it.
+        # it. Pruning goes by the manifest alone: a claim a dead run left behind says
+        # documator meant to write that path, which is no reason to delete what sits
+        # there now.
         prune(output_dir, tracked, produced)
 
     # Indexed once per run, so every transclusion in the run sees the same vault.
@@ -135,14 +144,26 @@ def render(
         for attachment in vault.attachments
     }
 
+    # Check mode writes nothing, so it has nothing to claim: it settles every refusal at
+    # the site that reports it, one file at a time.
+    intended: Allocation | None = None
+    if mode is Mode.WRITE:
+        intended = allocate(
+            output_dir,
+            owned,
+            [Claim(TemplatePath(path), _mirrored(path)) for path in relative_paths],
+        )
+        failures.extend(intended.refusals)
+        write_claims(output_dir, intended.claimed)
+
     written: dict[TemplatePath, DestinationPath] = {}
     for relative in relative_paths:
         template = TemplatePath(relative)
         destination = _mirrored(relative)
+        if intended is not None and not intended.covers(destination):
+            continue
         # Checked before rendering, so a file that cannot land never runs its blocks.
-        refused = blocked(
-            output_dir, tracked.destinations() | set(written.values()), destination
-        )
+        refused = blocked(output_dir, owned | set(written.values()), destination)
         if refused is not None:
             failures.append(refused)
             continue
@@ -168,9 +189,10 @@ def render(
         log.info("%s %s", "checked" if mode is Mode.CHECK else "rendered", relative)
 
     if mode is Mode.WRITE:
-        # Written last and only for what really landed, so the manifest can never
-        # claim a file this run refused to write.
+        # Rewritten last and now only for what really landed, so a run that finishes
+        # leaves a manifest that claims no file it refused to write.
         write_manifest(output_dir, Manifest(written))
+        clear_claims(output_dir)
 
     summarise(Produced(len(written)), [Errored(failure) for failure in failures])
     return worst(failures)

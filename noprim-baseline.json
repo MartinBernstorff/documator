@@ -131,14 +131,6 @@
         "annotation": "str"
       }
     ],
-    "src/documator/manifest.py": [
-      {
-        "code": "NOPRIM002",
-        "surface": "return",
-        "qualname": "manifest_path",
-        "annotation": "Path"
-      }
-    ],
     "src/documator/parsing.py": [
       {
         "code": "NOPRIM003",

@@ -30,7 +30,14 @@ from documator.execution import (
 )
 from documator.frontmatter import partition
 from documator.inert import skill_name, stem
-from documator.manifest import DestinationPath, Manifest, manifest_path, reserved
+from documator.manifest import (
+    DestinationPath,
+    Manifest,
+    TemplatePath,
+    claims_path,
+    manifest_path,
+    reserved,
+)
 from documator.parsing import (
     Block,
     DeclarationBlock,
@@ -128,7 +135,12 @@ def orphans(
     if log.isEnabledFor(logging.DEBUG):
         for kept in (
             Arr(sorted(destination.rglob("*"), key=str))
-            .filter(lambda path: path.is_file() and path != manifest_path(output_dir))
+            .filter(lambda path: path.is_file())
+            .filter(
+                lambda path: (
+                    path not in {manifest_path(output_dir), claims_path(output_dir)}
+                )
+            )
             .map(
                 lambda path: DestinationPath(
                     RelativePath(path.relative_to(destination))
@@ -199,7 +211,7 @@ class Reserved:
     target: DestinationPath
 
     def __str__(self) -> str:
-        return "refusing to write: documator keeps its manifest there"
+        return "refusing to write: documator keeps its own bookkeeping there"
 
 
 type WriteRefusal = Untracked | Obstructed | Reserved
@@ -211,7 +223,7 @@ def refusal(
     output_dir: OutputDir, owned: set[DestinationPath], target: DestinationPath
 ) -> WriteRefusal | None:
     destination = output_dir.root
-    if target == reserved():
+    if target in reserved():
         return Reserved(target)
     if (destination / target).exists() and target not in owned:
         return Untracked(target)
@@ -232,6 +244,37 @@ def blocked(
     failure = Failure(target, Annotation(str(refused)), ExitCode(2))
     log.error("%s", failure)
     return failure
+
+
+@dataclass(frozen=True, slots=True)
+class Claim:
+    source: TemplatePath
+    target: DestinationPath
+
+
+@dataclass(frozen=True, slots=True)
+class Allocation:
+    claimed: Manifest
+    refusals: list[Failure]
+
+    def covers(self, target: DestinationPath) -> bool:
+        return target in self.claimed.destinations()
+
+
+# Every write a run intends is claimed before the first one happens, so a run that dies
+# mid-write leaves paths the next run reclaims by writing them, instead of output of
+# documator's own that it then refuses forever. Refusals are settled here, so the claim
+# never reaches over a file somebody else owns.
+def allocate(
+    output_dir: OutputDir, owned: set[DestinationPath], claims: list[Claim]
+) -> Allocation:
+    judged = [(claim, blocked(output_dir, owned, claim.target)) for claim in claims]
+    return Allocation(
+        Manifest(
+            {claim.source: claim.target for claim, refused in judged if refused is None}
+        ),
+        [refused for _, refused in judged if refused is not None],
+    )
 
 
 # Check mode answers "would a real run change anything?", so it never touches the tree:
