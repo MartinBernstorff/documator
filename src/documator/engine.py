@@ -34,6 +34,7 @@ from documator.manifest import (
     DestinationPath,
     Manifest,
     TemplatePath,
+    claims_path,
     manifest_path,
     reserved,
 )
@@ -134,7 +135,12 @@ def orphans(
     if log.isEnabledFor(logging.DEBUG):
         for kept in (
             Arr(sorted(destination.rglob("*"), key=str))
-            .filter(lambda path: path.is_file() and path != manifest_path(output_dir))
+            .filter(lambda path: path.is_file())
+            .filter(
+                lambda path: (
+                    path not in {manifest_path(output_dir), claims_path(output_dir)}
+                )
+            )
             .map(
                 lambda path: DestinationPath(
                     RelativePath(path.relative_to(destination))
@@ -205,7 +211,7 @@ class Reserved:
     target: DestinationPath
 
     def __str__(self) -> str:
-        return "refusing to write: documator keeps its manifest there"
+        return "refusing to write: documator keeps its own bookkeeping there"
 
 
 type WriteRefusal = Untracked | Obstructed | Reserved
@@ -217,7 +223,7 @@ def refusal(
     output_dir: OutputDir, owned: set[DestinationPath], target: DestinationPath
 ) -> WriteRefusal | None:
     destination = output_dir.root
-    if target == reserved():
+    if target in reserved():
         return Reserved(target)
     if (destination / target).exists() and target not in owned:
         return Untracked(target)
@@ -256,13 +262,12 @@ class Allocation:
 
 
 # Every write a run intends is claimed before the first one happens, so a run that dies
-# mid-write leaves a manifest that over-claims — paths the next run reclaims by writing
-# or pruning them — instead of output of documator's own that it then refuses forever.
-# Refusals are settled here, so the claim never reaches over a file somebody else owns.
+# mid-write leaves paths the next run reclaims by writing them, instead of output of
+# documator's own that it then refuses forever. Refusals are settled here, so the claim
+# never reaches over a file somebody else owns.
 def allocate(
-    output_dir: OutputDir, tracked: Manifest, claims: list[Claim]
+    output_dir: OutputDir, owned: set[DestinationPath], claims: list[Claim]
 ) -> Allocation:
-    owned = tracked.destinations()
     judged = [(claim, blocked(output_dir, owned, claim.target)) for claim in claims]
     return Allocation(
         Manifest(

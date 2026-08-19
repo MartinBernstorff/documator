@@ -34,7 +34,10 @@ from documator.manifest import (
     DestinationPath,
     Manifest,
     TemplatePath,
+    clear_claims,
+    read_claims,
     read_manifest,
+    write_claims,
     write_manifest,
 )
 from documator.notice import annotated
@@ -323,7 +326,10 @@ def skills(
     reasons = DestinationPath(RelativePath(Path("documator-errors.md")))
     produced = {artifact.target for artifact in artifacts}
     tracked = read_manifest(output_dir)
+    # Pruning goes by the manifest alone: a claim a dead run left behind says documator
+    # meant to write that path, which is no reason to delete what sits there now.
     prune(output_dir, tracked, produced | ({reasons} if structural else set()))
+    owned = tracked.destinations() | read_claims(output_dir).destinations()
 
     content = (
         Arr(artifacts).map(lambda artifact: Arr(artifact.failures)).flatten().to_list()
@@ -332,14 +338,14 @@ def skills(
     reported = Claim(TemplatePath(RelativePath(reasons)), reasons)
     intended = allocate(
         output_dir,
-        tracked,
+        owned,
         [
             *(Claim(artifact.source, artifact.target) for artifact in artifacts),
             *([reported] if structural else []),
         ],
     )
     content.extend(intended.refusals)
-    write_manifest(output_dir, intended.claimed)
+    write_claims(output_dir, intended.claimed)
 
     written: dict[TemplatePath, DestinationPath] = {}
     for artifact in artifacts:
@@ -347,9 +353,7 @@ def skills(
             continue
         # Re-checked at the write, because an artifact this run already landed can stand
         # where a later one's parent directory belongs.
-        refused = blocked(
-            output_dir, tracked.destinations() | set(written.values()), artifact.target
-        )
+        refused = blocked(output_dir, owned | set(written.values()), artifact.target)
         if refused is not None:
             content.append(refused)
             continue
@@ -364,9 +368,7 @@ def skills(
     compiled = Produced(len(written))
 
     if structural and intended.covers(reasons):
-        refused = blocked(
-            output_dir, tracked.destinations() | set(written.values()), reasons
-        )
+        refused = blocked(output_dir, owned | set(written.values()), reasons)
         if refused is not None:
             content.append(refused)
         else:
@@ -376,6 +378,7 @@ def skills(
     # Rewritten last and now only for what really landed, so a run that finishes leaves
     # a manifest that claims no file it refused to write.
     write_manifest(output_dir, Manifest(written))
+    clear_claims(output_dir)
 
     problems: list[Problem] = [
         *(Errored(failure) for failure in structural),

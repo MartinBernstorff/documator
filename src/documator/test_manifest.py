@@ -170,8 +170,8 @@ def test_a_file_a_refused_run_left_alone_survives_the_following_run(
 
 # A run that dies between a write and the manifest would otherwise leave output of
 # documator's own that every later run refuses as somebody else's, so the claim is made
-# up front: the block reads the manifest from inside the same run that is still writing.
-def test_the_manifest_claims_every_file_before_the_first_one_is_written(
+# up front: the block reads the claims from inside the same run that is still writing.
+def test_every_file_is_claimed_before_the_first_one_is_written(
     tmp_path: Path,
 ) -> None:
     build_tree(
@@ -179,7 +179,7 @@ def test_the_manifest_claims_every_file_before_the_first_one_is_written(
         TreeLayout("""
             in
               a.md | # A\\n
-              b.md | ```\\n!cat ../out/.documator-manifest.json\\n```\\n
+              b.md | ```\\n!cat ../out/.documator-claims.json\\n```\\n
               foreign.md | # Foreign\\n
             out
               foreign.md | mine\\n
@@ -243,6 +243,40 @@ def test_a_skill_written_by_a_run_that_died_is_overwritten_by_the_next_one(
 """)
 
 
+# A claim buys the right to overwrite, never the right to delete: the run that made this
+# one died before writing the path, so what stands there now is somebody else's file.
+def test_a_claim_a_dead_run_never_reached_does_not_prune_the_file_put_there_since(
+    tmp_path: Path,
+) -> None:
+    build_tree(
+        tmp_path,
+        TreeLayout("""
+            in
+              @alpha.md | # Alpha\\n
+              @zeta.md | # Zeta\\n
+            out
+              zeta
+        """),
+    )
+    (tmp_path / "out" / "zeta").chmod(0o500)
+    with pytest.raises(PermissionError):
+        skills(
+            InputDir(tmp_path / "in"), OutputDir(tmp_path / "out"), TimeoutSeconds(10.0)
+        )
+    (tmp_path / "out" / "zeta").chmod(0o700)
+    (tmp_path / "out" / "zeta" / "SKILL.md").write_text("mine\n")
+    (tmp_path / "in" / "@zeta.md").unlink()
+
+    assert (
+        skills(
+            InputDir(tmp_path / "in"), OutputDir(tmp_path / "out"), TimeoutSeconds(10.0)
+        )
+        == 0
+    )
+
+    assert (tmp_path / "out" / "zeta" / "SKILL.md").read_text() == "mine\n"
+
+
 # The claim is made before the writes, so it is the one place that could hand a run
 # ownership of a file it is about to refuse.
 def test_a_claim_reaches_over_nothing_the_run_does_not_own(tmp_path: Path) -> None:
@@ -258,7 +292,7 @@ def test_a_claim_reaches_over_nothing_the_run_does_not_own(tmp_path: Path) -> No
 
     allocated = allocate(
         output_dir,
-        read_manifest(output_dir),
+        read_manifest(output_dir).destinations(),
         [
             Claim(
                 TemplatePath(RelativePath(Path("@plan.md"))),
