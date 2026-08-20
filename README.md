@@ -28,9 +28,10 @@ documator [--quiet] skills INPUT_DIR OUTPUT_DIR [--watch] [--timeout SECONDS]
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────╮
 │ --watch                                                                      │
-│ --check                                                                      │
-│ --timeout        SECONDS  [default: root=10.0]                               │
-│ --help                    Show this message and exit.                        │
+│ --check,--dry-run                                                            │
+│ --adopt                                                                      │
+│ --timeout                SECONDS  [default: root=10.0]                       │
+│ --help                            Show this message and exit.                │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ```
 
@@ -71,8 +72,10 @@ and would result in:
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────╮
 │ --watch                                                                      │
-│ --timeout        SECONDS  [default: root=10.0]                               │
-│ --help                    Show this message and exit.                        │
+│ --check,--dry-run                                                            │
+│ --adopt                                                                      │
+│ --timeout                SECONDS  [default: root=10.0]                       │
+│ --help                            Show this message and exit.                │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ```
 

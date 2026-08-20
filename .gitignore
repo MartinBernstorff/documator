@@ -14,3 +14,6 @@ build/
 .testmondata*
 output/cache/
 templates/cache/
+
+# Left behind by a run that died mid-write; recovered from, not committed.
+.documator-claims.json

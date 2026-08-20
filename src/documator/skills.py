@@ -8,24 +8,33 @@ from pydantic import ValidationError
 
 from documator.domain import (
     ExitCode,
+    FileContent,
     InputDir,
     OutputDir,
     RelativePath,
     TimeoutSeconds,
 )
 from documator.engine import (
+    Adoption,
+    Allocation,
     Claim,
     Failure,
+    Landed,
+    Mode,
     Origin,
     Placement,
+    adoptable,
     allocate,
     blocked,
     directory_conflict,
     log,
+    outdated,
     prune,
     relative_files,
     render_markdown,
     report_conflict,
+    report_orphans,
+    report_takeover,
     worst,
 )
 from documator.frontmatter import SkillName, Template, compose, partition, split
@@ -285,7 +294,11 @@ def _unclaimed(input_dir: InputDir, templates: list[_Template]) -> list[Relative
 
 
 def skills(
-    input_dir: InputDir, output_dir: OutputDir, timeout: TimeoutSeconds
+    input_dir: InputDir,
+    output_dir: OutputDir,
+    timeout: TimeoutSeconds,
+    mode: Mode = Mode.WRITE,
+    adoption: Adoption = Adoption.REFUSE,
 ) -> ExitCode:
     conflict = directory_conflict(input_dir, output_dir)
     if conflict is not None:
@@ -324,63 +337,96 @@ def skills(
     # The reasons are an artifact of their own, so a stale one dies with the run that
     # produced it and a skill that failed loses its previously-compiled copy.
     reasons = DestinationPath(RelativePath(Path("documator-errors.md")))
-    produced = {artifact.target for artifact in artifacts}
+    produced = {artifact.target for artifact in artifacts} | (
+        {reasons} if structural else set()
+    )
     tracked = read_manifest(output_dir)
-    # Pruning goes by the manifest alone: a claim a dead run left behind says documator
-    # meant to write that path, which is no reason to delete what sits there now.
-    prune(output_dir, tracked, produced | ({reasons} if structural else set()))
-    owned = tracked.destinations() | read_claims(output_dir).destinations()
-
     content = (
         Arr(artifacts).map(lambda artifact: Arr(artifact.failures)).flatten().to_list()
     )
+    if mode is Mode.CHECK:
+        content.extend(report_orphans(output_dir, tracked, produced))
+    else:
+        # Pruning goes by the manifest alone: a claim a dead run left behind says
+        # documator meant to write that path, which is no reason to delete what sits
+        # there now.
+        prune(output_dir, tracked, produced)
+    owned = tracked.destinations() | read_claims(output_dir).destinations()
+    # Announced before the first byte lands, so the run says what it is about to
+    # destroy rather than reporting it afterwards. A preview keeps its hands off
+    # `owned`, because the refusal is what it has to report.
+    adopted = adoptable(output_dir, owned, sorted(produced, key=str), adoption)
+    takeover = report_takeover(adopted, mode)
+    if mode is Mode.WRITE:
+        owned = owned | adopted
+
     # The report answers to the run, not to a template, so it is its own source.
     reported = Claim(TemplatePath(RelativePath(reasons)), reasons)
-    intended = allocate(
-        output_dir,
-        owned,
-        [
-            *(Claim(artifact.source, artifact.target) for artifact in artifacts),
-            *([reported] if structural else []),
-        ],
-    )
-    content.extend(intended.refusals)
-    write_claims(output_dir, intended.claimed)
+    # Check mode writes nothing, so it has nothing to claim: it settles every refusal at
+    # the site that reports it, one file at a time.
+    intended: Allocation | None = None
+    if mode is Mode.WRITE:
+        intended = allocate(
+            output_dir,
+            owned,
+            [
+                *(Claim(artifact.source, artifact.target) for artifact in artifacts),
+                *([reported] if structural else []),
+            ],
+        )
+        content.extend(intended.refusals)
+        write_claims(output_dir, intended.claimed)
 
     written: dict[TemplatePath, DestinationPath] = {}
     for artifact in artifacts:
-        if not intended.covers(artifact.target):
+        if intended is not None and not intended.covers(artifact.target):
             continue
         # Re-checked at the write, because an artifact this run already landed can stand
         # where a later one's parent directory belongs.
-        refused = blocked(output_dir, owned | set(written.values()), artifact.target)
+        refused = blocked(
+            output_dir, owned | set(written.values()), artifact.target, adoption
+        )
         if refused is not None:
             content.append(refused)
             continue
-        target = output_dir.root / artifact.target
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(_bytes(artifact))
+        content.extend(
+            _land(mode, output_dir, artifact.target, FileContent(_bytes(artifact)))
+        )
         written[artifact.source] = artifact.target
-        log.info("%s %s into %s", artifact.verb, artifact.source, artifact.target)
+        log.info(
+            "%s %s into %s",
+            "checked" if mode is Mode.CHECK else artifact.verb,
+            artifact.source,
+            artifact.target,
+        )
 
     # Counted before the report lands, because the report is the run describing itself
     # rather than a skill it compiled.
     compiled = Produced(len(written))
 
-    if structural and intended.covers(reasons):
-        refused = blocked(output_dir, owned | set(written.values()), reasons)
+    if structural and (intended is None or intended.covers(reasons)):
+        refused = blocked(output_dir, owned | set(written.values()), reasons, adoption)
         if refused is not None:
             content.append(refused)
         else:
-            (output_dir.root / reasons).write_text(report(structural), encoding="utf-8")
+            content.extend(
+                _land(
+                    mode,
+                    output_dir,
+                    reasons,
+                    FileContent(report(structural).encode("utf-8")),
+                )
+            )
             written[reported.source] = reported.target
 
-    # Rewritten last and now only for what really landed, so a run that finishes leaves
-    # a manifest that claims no file it refused to write.
-    write_manifest(output_dir, Manifest(written))
-    clear_claims(output_dir)
+    if mode is Mode.WRITE:
+        # Rewritten last and now only for what really landed, so a run that finishes
+        # leaves a manifest that claims no file it refused to write.
+        write_manifest(output_dir, Manifest(written))
+        clear_claims(output_dir)
 
     problems: list[Problem] = [
+        *takeover,
         *(Errored(failure) for failure in structural),
         *(Errored(failure) for failure in content),
     ]
@@ -388,6 +434,20 @@ def skills(
 
     # A structural failure is a content failure; 2 stays reserved for an impossible run.
     return ExitCode(max(worst(content), 1 if structural else 0))
+
+
+# The only place the two modes part ways: one makes the output match, the other reports
+# that it does not.
+def _land(
+    mode: Mode, output_dir: OutputDir, target: DestinationPath, content: FileContent
+) -> list[Failure]:
+    if mode is Mode.CHECK:
+        stale = outdated(output_dir, target, Landed(content, None))
+        return [] if stale is None else [stale]
+    site = output_dir.root / target
+    site.parent.mkdir(parents=True, exist_ok=True)
+    site.write_bytes(content)
+    return []
 
 
 def _bytes(artifact: _Artifact) -> bytes:

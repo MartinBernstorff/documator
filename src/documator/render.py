@@ -12,6 +12,7 @@ from documator.domain import (
     TimeoutSeconds,
 )
 from documator.engine import (
+    Adoption,
     Allocation,
     Claim,
     Failure,
@@ -19,6 +20,7 @@ from documator.engine import (
     Mode,
     Origin,
     Placement,
+    adoptable,
     allocate,
     blocked,
     directory_conflict,
@@ -29,6 +31,7 @@ from documator.engine import (
     render_markdown,
     report_conflict,
     report_orphans,
+    report_takeover,
     worst,
 )
 from documator.execution import Annotation
@@ -48,7 +51,7 @@ from documator.notice import annotated
 from documator.parsing import Markdown
 from documator.sections import emitted
 from documator.structural import Misplaced, misplaced
-from documator.summary import Errored, Produced, summarise
+from documator.summary import Errored, Problem, Produced, summarise
 from documator.transclusion import NotePath, Target, index
 
 
@@ -95,6 +98,7 @@ def render(
     output_dir: OutputDir,
     timeout: TimeoutSeconds,
     mode: Mode = Mode.WRITE,
+    adoption: Adoption = Adoption.REFUSE,
 ) -> ExitCode:
     conflict = directory_conflict(input_dir, output_dir)
     if conflict is not None:
@@ -118,6 +122,15 @@ def render(
     tracked = read_manifest(output_dir)
     owned = tracked.destinations() | read_claims(output_dir).destinations()
     produced = {_mirrored(path) for path in relative_paths}
+    # Settled before anything else looks at ownership, so a run that adopts differs
+    # from one that always owned these paths only in the line it logs. A preview keeps
+    # its hands off `owned`, because the refusal is what it has to report.
+    adopted = adoptable(output_dir, owned, sorted(produced, key=str), adoption)
+    # Announced before the first byte lands, so the run says what it is about to destroy
+    # rather than reporting it afterwards.
+    takeover = report_takeover(adopted, mode)
+    if mode is Mode.WRITE:
+        owned = owned | adopted
 
     failures: list[Failure] = [
         *(_refused(failure) for failure in misplacements),
@@ -163,7 +176,9 @@ def render(
         if intended is not None and not intended.covers(destination):
             continue
         # Checked before rendering, so a file that cannot land never runs its blocks.
-        refused = blocked(output_dir, owned | set(written.values()), destination)
+        refused = blocked(
+            output_dir, owned | set(written.values()), destination, adoption
+        )
         if refused is not None:
             failures.append(refused)
             continue
@@ -194,7 +209,8 @@ def render(
         write_manifest(output_dir, Manifest(written))
         clear_claims(output_dir)
 
-    summarise(Produced(len(written)), [Errored(failure) for failure in failures])
+    problems: list[Problem] = [*takeover, *(Errored(failure) for failure in failures)]
+    summarise(Produced(len(written)), problems)
     return worst(failures)
 
 

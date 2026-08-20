@@ -1,10 +1,13 @@
 import json
+import logging
 from pathlib import Path
 from typing import NewType
 
 from pydantic import RootModel, ValidationError
 
 from documator.domain import OutputDir, RelativePath
+
+log = logging.getLogger("documator")
 
 # The two files documator keeps for itself in the output tree.
 BookkeepingPath = NewType("BookkeepingPath", Path)
@@ -39,7 +42,10 @@ def reserved() -> set[DestinationPath]:
     }
 
 
-# An unreadable manifest reads as "nothing is tracked", which deletes nothing.
+# An unreadable manifest reads as "nothing is tracked", which deletes nothing — but it
+# also disowns every file the run before it wrote, and the next run refuses each one as
+# somebody else's. Said out loud, because that failure otherwise surfaces a run later
+# with nothing pointing back at its cause.
 def read_manifest(output_dir: OutputDir) -> Manifest:
     return _read(manifest_path(output_dir))
 
@@ -54,6 +60,11 @@ def _read(path: BookkeepingPath) -> Manifest:
     try:
         return Manifest.model_validate_json(path.read_text(encoding="utf-8"))
     except ValidationError, UnicodeDecodeError:
+        log.warning(
+            "%s is unreadable: nothing counts as documator's own until a run reclaims"
+            " it with --adopt",
+            path.name,
+        )
         return Manifest({})
 
 
