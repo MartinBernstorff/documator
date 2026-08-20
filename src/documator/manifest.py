@@ -47,25 +47,32 @@ def reserved() -> set[DestinationPath]:
 # somebody else's. Said out loud, because that failure otherwise surfaces a run later
 # with nothing pointing back at its cause.
 def read_manifest(output_dir: OutputDir) -> Manifest:
-    return _read(manifest_path(output_dir))
+    path = manifest_path(output_dir)
+    parsed = _read(path)
+    if parsed is not None:
+        return parsed
+    log.warning(
+        "%s is unreadable: nothing counts as documator's own until a run reclaims it"
+        " with --adopt",
+        path.name,
+    )
+    return Manifest({})
 
 
+# A claims file is rewritten by every run and cleared by every run that finishes, so an
+# unreadable one costs nothing and has nothing to reclaim: it stays quiet.
 def read_claims(output_dir: OutputDir) -> Manifest:
-    return _read(claims_path(output_dir))
+    parsed = _read(claims_path(output_dir))
+    return Manifest({}) if parsed is None else parsed
 
 
-def _read(path: BookkeepingPath) -> Manifest:
+def _read(path: BookkeepingPath) -> Manifest | None:
     if not path.is_file():
         return Manifest({})
     try:
         return Manifest.model_validate_json(path.read_text(encoding="utf-8"))
     except ValidationError, UnicodeDecodeError:
-        log.warning(
-            "%s is unreadable: nothing counts as documator's own until a run reclaims"
-            " it with --adopt",
-            path.name,
-        )
-        return Manifest({})
+        return None
 
 
 def write_manifest(output_dir: OutputDir, manifest: Manifest) -> None:

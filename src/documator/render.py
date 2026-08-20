@@ -125,7 +125,7 @@ def render(
     # Settled before anything else looks at ownership, so a run that adopts differs
     # from one that always owned these paths only in the line it logs. A preview keeps
     # its hands off `owned`, because the refusal is what it has to report.
-    adopted = adoptable(output_dir, owned, sorted(produced, key=str), adoption)
+    adopted = adoptable(output_dir, owned, produced, adoption)
     # Announced before the first byte lands, so the run says what it is about to destroy
     # rather than reporting it afterwards.
     takeover = report_takeover(adopted, mode)

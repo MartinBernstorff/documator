@@ -355,7 +355,7 @@ def skills(
     # Announced before the first byte lands, so the run says what it is about to
     # destroy rather than reporting it afterwards. A preview keeps its hands off
     # `owned`, because the refusal is what it has to report.
-    adopted = adoptable(output_dir, owned, sorted(produced, key=str), adoption)
+    adopted = adoptable(output_dir, owned, produced, adoption)
     takeover = report_takeover(adopted, mode)
     if mode is Mode.WRITE:
         owned = owned | adopted

@@ -282,7 +282,7 @@ def blocked(
 def adoptable(
     output_dir: OutputDir,
     owned: set[DestinationPath],
-    targets: list[DestinationPath],
+    targets: set[DestinationPath],
     adoption: Adoption,
 ) -> set[DestinationPath]:
     if adoption is Adoption.REFUSE:
