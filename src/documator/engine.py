@@ -51,6 +51,7 @@ from documator.parsing import (
     parse,
 )
 from documator.sections import emitted, section
+from documator.summary import Count, Noun, Problem, Tally, Warned
 from documator.transclusion import (
     AttachmentPath,
     LinkedAttachment,
@@ -184,7 +185,10 @@ class Untracked:
     target: DestinationPath
 
     def __str__(self) -> str:
-        return "refusing to overwrite: not written by documator"
+        return (
+            "refusing to overwrite: not written by documator"
+            " (pass --adopt to take ownership)"
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -217,6 +221,23 @@ class Reserved:
 type WriteRefusal = Untracked | Obstructed | Reserved
 
 
+# The one way past that refusal, so documator can be pointed at a tree it did not
+# create. Only an untracked file is adoptable: clearing the way for a directory would
+# take a delete, and the bookkeeping is documator's own to keep.
+class Adoption(StrEnum):
+    REFUSE = "refuse"
+    ADOPT = "adopt"
+
+
+# What adoption does to the file already standing there, said before it happens.
+@dataclass(frozen=True, slots=True)
+class Adoptable:
+    target: DestinationPath
+
+    def __str__(self) -> str:
+        return "would overwrite: not written by documator (--adopt)"
+
+
 # Pruning no longer clears the way, so a foreign file at a target path — or one standing
 # where a target's parent directory belongs — blocks that write instead of vanishing.
 def refusal(
@@ -235,15 +256,42 @@ def refusal(
 
 
 # The one gate every write goes through: a refusal costs the file, never the run.
+# A run that adopts owns its targets before it reaches here, so the only adoption this
+# sees is the one a preview reports: a would-be takeover is pending work (1), not the
+# impossible run (2) the same file is without the flag.
 def blocked(
-    output_dir: OutputDir, owned: set[DestinationPath], target: DestinationPath
+    output_dir: OutputDir,
+    owned: set[DestinationPath],
+    target: DestinationPath,
+    adoption: Adoption = Adoption.REFUSE,
 ) -> Failure | None:
     refused = refusal(output_dir, owned, target)
     if refused is None:
         return None
-    failure = Failure(target, Annotation(str(refused)), ExitCode(2))
+    if isinstance(refused, Untracked) and adoption is Adoption.ADOPT:
+        failure = Failure(target, Annotation(str(Adoptable(target))), ExitCode(1))
+    else:
+        failure = Failure(target, Annotation(str(refused)), ExitCode(2))
     log.error("%s", failure)
     return failure
+
+
+# Adoption is ownership handed over up front, so every path that changes hands is
+# settled in one place and the rest of the run cannot tell an adopted target from an
+# old one.
+def adoptable(
+    output_dir: OutputDir,
+    owned: set[DestinationPath],
+    targets: set[DestinationPath],
+    adoption: Adoption,
+) -> set[DestinationPath]:
+    if adoption is Adoption.REFUSE:
+        return set()
+    return {
+        target
+        for target in targets
+        if isinstance(refusal(output_dir, owned, target), Untracked)
+    }
 
 
 @dataclass(frozen=True, slots=True)
@@ -282,6 +330,30 @@ def allocate(
 class Mode(StrEnum):
     WRITE = "write"
     CHECK = "check"
+
+
+# A takeover destroys files documator did not write, so the count outlives `--quiet`:
+# the per-file lines are INFO, and this is all a scripted run is left with.
+@dataclass(frozen=True, slots=True)
+class Takeover:
+    adopted: set[DestinationPath]
+    mode: Mode
+
+    def __str__(self) -> str:
+        verb = "would adopt" if self.mode is Mode.CHECK else "adopted"
+        counted = Tally(Count(len(self.adopted)), Noun("file"))
+        return f"{verb} {counted} not previously written by documator"
+
+
+# Reported once for the run rather than once per file, because the flag is
+# all-or-nothing and the number is the thing worth interrupting a quiet run for.
+def report_takeover(adopted: set[DestinationPath], mode: Mode) -> list[Problem]:
+    if not adopted:
+        return []
+    if mode is Mode.WRITE:
+        for target in sorted(adopted, key=str):
+            log.info("adopted %s", target)
+    return [Warned(Takeover(adopted, mode))]
 
 
 @dataclass(frozen=True, slots=True)

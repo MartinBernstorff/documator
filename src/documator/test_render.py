@@ -193,9 +193,9 @@ def test_an_untracked_file_at_a_target_path_blocks_the_write(
     assert_tree(tmp_path / "out", TreeLayout("note.md | mine\\n"))
     assert caplog.messages == snapshot(
         [
-            "note.md: refusing to overwrite: not written by documator",
+            "note.md: refusing to overwrite: not written by documator (pass --adopt to take ownership)",
             "0 files, 0 warnings, 1 error",
-            "note.md: refusing to overwrite: not written by documator",
+            "note.md: refusing to overwrite: not written by documator (pass --adopt to take ownership)",
         ]
     )
 

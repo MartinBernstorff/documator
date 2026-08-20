@@ -1,10 +1,13 @@
 import json
+import logging
 from pathlib import Path
 from typing import NewType
 
 from pydantic import RootModel, ValidationError
 
 from documator.domain import OutputDir, RelativePath
+
+log = logging.getLogger("documator")
 
 # The two files documator keeps for itself in the output tree.
 BookkeepingPath = NewType("BookkeepingPath", Path)
@@ -39,22 +42,37 @@ def reserved() -> set[DestinationPath]:
     }
 
 
-# An unreadable manifest reads as "nothing is tracked", which deletes nothing.
+# An unreadable manifest reads as "nothing is tracked", which deletes nothing — but it
+# also disowns every file the run before it wrote, and the next run refuses each one as
+# somebody else's. Said out loud, because that failure otherwise surfaces a run later
+# with nothing pointing back at its cause.
 def read_manifest(output_dir: OutputDir) -> Manifest:
-    return _read(manifest_path(output_dir))
+    path = manifest_path(output_dir)
+    parsed = _read(path)
+    if parsed is not None:
+        return parsed
+    log.warning(
+        "%s is unreadable: nothing counts as documator's own until a run reclaims it"
+        " with --adopt",
+        path.name,
+    )
+    return Manifest({})
 
 
+# A claims file is rewritten by every run and cleared by every run that finishes, so an
+# unreadable one costs nothing and has nothing to reclaim: it stays quiet.
 def read_claims(output_dir: OutputDir) -> Manifest:
-    return _read(claims_path(output_dir))
+    parsed = _read(claims_path(output_dir))
+    return Manifest({}) if parsed is None else parsed
 
 
-def _read(path: BookkeepingPath) -> Manifest:
+def _read(path: BookkeepingPath) -> Manifest | None:
     if not path.is_file():
         return Manifest({})
     try:
         return Manifest.model_validate_json(path.read_text(encoding="utf-8"))
     except ValidationError, UnicodeDecodeError:
-        return Manifest({})
+        return None
 
 
 def write_manifest(output_dir: OutputDir, manifest: Manifest) -> None:
