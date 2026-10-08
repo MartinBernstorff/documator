@@ -311,7 +311,7 @@ def skills(
     # An unmarked note is a term, so producing no skill is what it is for: the warning
     # channel stays free for mistakes, and a link that wanted one is the error instead.
     for path in _unclaimed(input_dir, templates):
-        log.info("ignored %s", path)
+        log.debug("ignored %s", path)
 
     named, misnamed = _named(templates)
     unique, colliding = _unique(named)
