@@ -35,6 +35,7 @@ build_command = ""
 
 [dependency-groups]
 dev = [
+    "actionlint-py>=1.7.12",
     "inline-snapshot>=0.35.2",
     "lefthook>=2.1.10",
     "noprim>=0.1.0",
