@@ -11,21 +11,21 @@ Always run tasks through **moon**, never the tool directly. This runs dependenci
 
 ```
 ╭──────────────────────────────────────────────────────────────────────────────╮
-│Task                       Command          Toolchains                        │
+│Task                       Command   Toolchains                               │
 │──────────────────────────────────────────────────────────────────────────────│
-│documator:actionlint       (script)         system                            │
-│documator:docs             (script)         system                            │
-│documator:format           (script)         system                            │
-│documator:format-fix       (script)         system                            │
-│documator:lint             (script)         system                            │
-│documator:lint-fix         (script)         system                            │
-│documator:modularity       (script)         system                            │
-│documator:noprim           (script)         system                            │
-│documator:snapshot         (script)         system                            │
-│documator:test             (script)         system                            │
-│documator:typecheck        (script)         system                            │
-│documator:zizmor           (script)         system                            │
-│documator:zizmor-fix       (script)         system                            │
+│documator:actionlint       (script)  system                                   │
+│documator:docs             (script)  system                                   │
+│documator:format           (script)  system                                   │
+│documator:format-fix       (script)  system                                   │
+│documator:lint             (script)  system                                   │
+│documator:lint-fix         (script)  system                                   │
+│documator:modularity       (script)  system                                   │
+│documator:noprim           (script)  system                                   │
+│documator:snapshot         (script)  system                                   │
+│documator:test             (script)  system                                   │
+│documator:typecheck        (script)  system                                   │
+│documator:zizmor           (script)  system                                   │
+│documator:zizmor-fix       (script)  system                                   │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ```
 
