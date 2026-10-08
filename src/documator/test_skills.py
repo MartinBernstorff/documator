@@ -710,7 +710,7 @@ def test_an_inert_segment_anywhere_on_the_path_produces_no_skill(
     assert_tree(tmp_path / "out", TreeLayout(""))
 
 
-def test_an_unmarked_file_is_logged_at_info_rather_than_warned_about(
+def test_an_unmarked_file_is_logged_at_debug_rather_than_warned_about(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     build_tree(
@@ -724,22 +724,22 @@ def test_an_unmarked_file_is_logged_at_info_rather_than_warned_about(
         """),
     )
 
-    with caplog.at_level(logging.INFO, logger="documator"):
+    with caplog.at_level(logging.DEBUG, logger="documator"):
         assert _skills(tmp_path / "in", tmp_path / "out") == 0
 
     assert [
         (record.levelname, record.message) for record in caplog.records
     ] == snapshot(
         [
-            ("INFO", "ignored Tracer bullet.md"),
-            ("INFO", "ignored helper.py"),
+            ("DEBUG", "ignored Tracer bullet.md"),
+            ("DEBUG", "ignored helper.py"),
             ("INFO", "compiled @foo.md into foo/SKILL.md"),
             ("INFO", "1 file, 0 warnings, 0 errors"),
         ]
     )
 
 
-def test_an_ignored_inert_path_is_logged_at_info(
+def test_an_ignored_inert_path_is_logged_at_debug(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     build_tree(
@@ -753,15 +753,15 @@ def test_an_ignored_inert_path_is_logged_at_info(
         """),
     )
 
-    with caplog.at_level(logging.INFO, logger="documator"):
+    with caplog.at_level(logging.DEBUG, logger="documator"):
         assert _skills(tmp_path / "in", tmp_path / "out") == 0
 
     assert [
         (record.levelname, record.message) for record in caplog.records
     ] == snapshot(
         [
-            ("INFO", "ignored .DS_Store"),
-            ("INFO", "ignored _notes/todo.txt"),
+            ("DEBUG", "ignored .DS_Store"),
+            ("DEBUG", "ignored _notes/todo.txt"),
             ("INFO", "0 files, 0 warnings, 0 errors"),
         ]
     )
