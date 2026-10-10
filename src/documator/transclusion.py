@@ -310,6 +310,14 @@ class NoLinkTarget:
 
 
 @dataclass(frozen=True, slots=True)
+class NoAttachmentTarget:
+    reference: Reference
+
+    def __str__(self) -> str:
+        return f'no attachment matches link "{self.reference}"'
+
+
+@dataclass(frozen=True, slots=True)
 class AmbiguousLink:
     reference: Reference
     candidates: tuple[VaultPath, ...]
@@ -343,8 +351,16 @@ class LinkedAttachment:
     wording: Wording
 
 
-type LinkFailure = NoLinkTarget | AmbiguousLink
-type LinkResolution = LinkedNote | LinkedAttachment | LinkFailure
+# A link may name a note that was renamed away or not written yet. The prose still
+# reads correctly with the name alone, so a miss is emitted rather than failed.
+@dataclass(frozen=True, slots=True)
+class DanglingLink:
+    named: Reference
+    wording: Wording
+
+
+type LinkFailure = NoLinkTarget | NoAttachmentTarget | AmbiguousLink
+type LinkResolution = LinkedNote | LinkedAttachment | DanglingLink | LinkFailure
 
 
 # A link names a thing rather than lending its text, so it resolves to the target alone:
@@ -372,7 +388,7 @@ def resolve_link(vault: Vault, reference: Reference) -> LinkResolution:
 # what the author wrote rather than a spelling of it.
 def _attachment(
     vault: Vault, reference: Reference, addressed: Reference, wording: Wording
-) -> LinkedAttachment | LinkFailure:
+) -> LinkedAttachment | DanglingLink | LinkFailure:
     wanted = _segments(addressed)
     found = (
         Arr(vault.attachments)
@@ -381,9 +397,19 @@ def _attachment(
     )
     if len(found) > 1:
         return AmbiguousLink(reference, tuple(found))
+    if not found and _suffixed(addressed):
+        return NoAttachmentTarget(reference)
     if not found:
-        return NoLinkTarget(reference)
+        return DanglingLink(addressed, wording)
     return LinkedAttachment(found[0], wording)
+
+
+# A note may not exist yet, but an attachment is a file the output points at, so naming
+# one that is missing leaves a broken path. A suffix must start with a letter, so a
+# dotted note name such as `Release 1.0` is not mistaken for a file.
+def _suffixed(reference: Reference) -> bool:
+    named = re.sub(r"\.md$", "", reference.strip(), flags=re.IGNORECASE)
+    return re.search(r"\.[a-z][a-z0-9]*$", named, flags=re.IGNORECASE) is not None
 
 
 # An embed drops the alias because it renders the target; a link keeps it, because the
