@@ -1,6 +1,7 @@
 import functools
 import logging
 import os
+import re
 import stat
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -54,6 +55,7 @@ from documator.sections import emitted, section
 from documator.summary import Count, Noun, Problem, Tally, Warned
 from documator.transclusion import (
     AttachmentPath,
+    DanglingLink,
     LinkedAttachment,
     LinkedNote,
     NonNoteEmbed,
@@ -62,6 +64,7 @@ from documator.transclusion import (
     Target,
     TransclusionFailure,
     Vault,
+    Wording,
     resolve,
     resolve_link,
 )
@@ -592,12 +595,18 @@ def _reported(
     return Rendered(Markdown(text), [at_fault])
 
 
-# A broken link leaves one wrong word in otherwise complete prose, so it is a content
-# failure (1) rather than the structural hole an unresolvable transclusion leaves (2).
+# An ambiguous link leaves one wrong word in otherwise complete prose, so it is a
+# content failure (1) rather than the structural hole an unresolvable transclusion
+# leaves (2).
 def _render_link(text: Markdown, reference: Reference, origin: Origin) -> Rendered:
     resolved = resolve_link(origin.vault, reference)
     if isinstance(resolved, LinkedNote):
-        return Rendered(Markdown(_emitted(resolved)), [])
+        named = _emitted(RelativePath(resolved.note.root), resolved.wording)
+        return Rendered(Markdown(named), [])
+    if isinstance(resolved, DanglingLink):
+        log.debug("link %s matches no note", reference)
+        named = _emitted(_unresolved(resolved), resolved.wording)
+        return Rendered(Markdown(named), [])
     if isinstance(resolved, LinkedAttachment):
         return _render_attachment(text, resolved, origin)
     return _inline_authoring_error(text, Annotation(str(resolved)), origin)
@@ -611,21 +620,29 @@ def _render_attachment(
         note = Annotation(str(Unreachable(linked.attachment)))
         return _inline_authoring_error(text, note, origin)
     label = linked.wording.alias or stem(RelativePath(linked.attachment.root))
-    return Rendered(Markdown(f"[{label}]({reached.as_posix()}{_fragment(linked)})"), [])
+    target = f"{reached.as_posix()}{_fragment(linked.wording)}"
+    return Rendered(Markdown(f"[{label}]({target})"), [])
 
 
 # A skill reference is a call the model may choose to make, so an alias has nothing to
 # relabel; a term is prose, so the alias is the sentence's own wording.
-def _emitted(linked: LinkedNote) -> str:
-    path = RelativePath(linked.note.root)
+def _emitted(path: RelativePath, wording: Wording) -> str:
     invoked = skill_name(path)
     if invoked is not None:
-        return f"`/{invoked}{_fragment(linked)}`"
-    return f"{linked.wording.alias or stem(path)}{_fragment(linked)}"
+        return f"`/{invoked}{_fragment(wording)}`"
+    return f"{wording.alias or stem(path)}{_fragment(wording)}"
 
 
-def _fragment(linked: LinkedNote | LinkedAttachment) -> str:
-    return f"#{linked.wording.fragment}" if linked.wording.fragment else ""
+# Spelled as the note the link would have reached, so a dangling link reads the same
+# as a resolved one. Only `.md` is dropped: any other dot belongs to the name.
+def _unresolved(dangling: DanglingLink) -> RelativePath:
+    name = Path(dangling.named.strip().replace("\\", "/")).name
+    bare = re.sub(r"\.md$", "", name, flags=re.IGNORECASE)
+    return RelativePath(Path(f"{bare}.md"))
+
+
+def _fragment(wording: Wording) -> str:
+    return f"#{wording.fragment}" if wording.fragment else ""
 
 
 def _render_transclusion(
